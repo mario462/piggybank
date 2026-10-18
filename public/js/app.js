@@ -230,10 +230,19 @@ function openTx(type = 'add', o = {}) {
   function update() {
     seg.replaceChildren(...[['add', 'Add'], ['withdraw', 'Withdraw'], ['transfer', 'Move']].map(([k, l]) =>
       h('button', { class: sel.type === k ? 'on' : '', role: 'tab', 'aria-selected': String(sel.type === k), onclick: () => { sel.type = k; update(); } }, l)));
+    // a move needs somewhere to go: with one category, say so and offer to make another rather than a From and To
+    // that can never both be picked
+    const lone = sel.type === 'transfer' && active().length < 2;
     labA.textContent = sel.type === 'add' ? 'Into' : 'From';
     chips(rowA, 'a', sel.type === 'transfer' ? sel.b : null);
-    labB.hidden = rowB.hidden = sel.type !== 'transfer';
+    labA.hidden = rowA.hidden = lone;
+    labB.hidden = rowB.hidden = sel.type !== 'transfer' || lone;
     if (sel.type === 'transfer') chips(rowB, 'b', sel.a);
+    if (lone) {
+      hint.textContent = 'Moving money needs a second category to move it to.'; hint.className = 'hint';
+      go.disabled = false; go.textContent = 'Create another category';
+      return;
+    }
     const c = cents(), A = sel.a && store.cat(sel.a), B = sel.b && store.cat(sel.b), b = balances(store.cats, store.txs);
     hint.textContent = ''; hint.className = 'hint';
     // the server refuses more than this, so the change would show for a moment and then vanish with an error
@@ -252,6 +261,7 @@ function openTx(type = 'add', o = {}) {
   }
   function submit() {
     if (go.disabled) return;
+    if (sel.type === 'transfer' && active().length < 2) return openCategory();
     const tx = store.addTx({ type: sel.type, cat: sel.a, to: sel.b, amount: cents(), note: note.value.trim() });
     closeSheet();
     toast(describe(tx), () => store.undoTx(tx.id));
