@@ -572,8 +572,10 @@ function render() {
   const wk = netSince(store.txs, Date.now() - 7 * DAY), owe = borrowed(b);
   $('#meta').replaceChildren(h('span', { class: wk >= 0 ? 'up' : 'down' }, `${fmt(wk, { sign: true })} this week`),
     owe ? h('span', {}, `${fmt(owe)} borrowed`) : '', h('span', {}, `${active().length} ${active().length === 1 ? 'category' : 'categories'}`));
-  const chart = $('#chart'), html = chartSVG(chartPoints(), 400, 84);
-  if (chart.dataset.html !== html) { chart.innerHTML = html; chart.dataset.html = html; drawLine(chart); }
+  // redraw, and replay the draw-in, only when the history changed. Not by comparing the markup: it is new on every call
+  // (a fresh gradient id, and the line stretched to the current time), so every background sync replayed the animation.
+  const chart = $('#chart'), pts = chartPoints(), key = JSON.stringify(pts.slice(0, -1));
+  if (chart.dataset.key !== key) { chart.innerHTML = chartSVG(pts, 400, 84); chart.dataset.key = key; drawLine(chart); }
   $('#alloc').replaceChildren(...active().filter(c => b[c.id] > 0).map(c => h('i', { style: `--c:${c.color};flex-grow:${b[c.id]}`, title: c.name })));
 
   openRow = null;

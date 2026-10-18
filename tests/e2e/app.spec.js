@@ -82,6 +82,20 @@ test('data survives a reload with an empty cache (server is the source of truth)
   await expect(page.locator('.cat')).toHaveCount(3);
 });
 
+test('a background sync with nothing new leaves the overview chart alone', async ({ page }) => {
+  await page.goto('/');
+  await synced(page);
+  await page.waitForTimeout(1300); // let the line finish drawing in
+  const kept = await page.evaluate(async () => {
+    const line = document.querySelector('#chart .ln');
+    await window.piggy.store.flush();
+    await new Promise(r => requestAnimationFrame(r));
+    const now = document.querySelector('#chart .ln');
+    return { same: now === line, offset: getComputedStyle(now).strokeDashoffset };
+  });
+  expect(kept).toEqual({ same: true, offset: '0px' });
+});
+
 test('undo removes the transaction everywhere', async ({ page }) => {
   await page.goto('/');
   await synced(page);
