@@ -354,6 +354,27 @@ test('an archived category is deleted with a swipe and a confirmation, keeping o
 });
 const fmtCents = c => (c < 0 ? '−' : '') + '$' + (Math.abs(c) / 100).toLocaleString('en-US', { minimumFractionDigits: 2 });
 
+test('Move with only one category offers to create another instead of a dead end', async ({ page }) => {
+  // a server that holds a single category; nothing is written
+  await page.route('**/api/state', r => r.fulfill({ json: {
+    categories: [{ id: 'onlycat001', name: 'Japan trip', color: '#7c9cff', goal: 0, archived: null }],
+    transactions: [{ id: 'onlytx0001', type: 'add', cat: 'onlycat001', to: null, amount: 10000, note: '', t: Date.now() - 1000 }],
+  } }));
+  await page.goto('/');
+  await page.evaluate(() => localStorage.clear());
+  await page.reload();
+  await synced(page);
+  await page.locator('#bMove').click();
+  const sheet = page.getByRole('dialog', { name: 'New transaction' });
+  await expect(sheet.locator('.chips').first()).toBeHidden();
+  await expect(sheet.locator('.hint')).toHaveText('Moving money needs a second category to move it to.');
+  await sheet.locator('#go').click();
+  await expect(page.getByRole('dialog', { name: 'New category' })).toBeVisible();
+  await page.keyboard.press('Escape');
+  await page.unroute('**/api/state');
+  await page.evaluate(() => localStorage.clear());
+});
+
 test('no horizontal scrolling at iPhone width', async ({ page }) => {
   await page.goto('/');
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
