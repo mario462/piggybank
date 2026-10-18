@@ -348,7 +348,7 @@ function renderMenu() {
     h('div', { class: 'menu' },
       h('button', { onclick: () => closeMenu(() => openCategory()) }, 'New category', h('small', {}, 'Add something to save for')),
       h('button', { id: 'export', onclick: exportBackup }, 'Export backup', h('small', {}, 'Download all categories and transactions as JSON')),
-      h('button', { onclick: () => { closeMenu(); store.flush(); } }, 'Sync now', h('small', {}, syncText()))),
+      h('button', { onclick: () => { closeMenu(); store.flush(); } }, 'Sync now', h('small', { class: 'sync-t' }, syncText()))),
   ].flat(2));
 }
 function byYear(list) {
@@ -560,7 +560,9 @@ function renderSync() {
   const el = $('#sync');
   el.dataset.s = store.status;
   el.replaceChildren(h('i'), syncText());
-  renderMenu();
+  // only the menu's sync line: rebuilding the whole menu on every status change shut a row swiped open in it
+  const line = drawer?.querySelector('.sync-t');
+  if (line) line.textContent = syncText();
 }
 const brand = () => $('#home .brand').cloneNode(true);
 
