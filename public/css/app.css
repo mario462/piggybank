@@ -105,7 +105,7 @@ button:focus-visible, input:focus-visible { outline: 2px solid var(--ink); outli
 .none { color: var(--muted); text-align: center; padding: 28px 0; }
 
 /* sheets */
-.sheet-wrap { position: absolute; inset: 0; z-index: 50; pointer-events: none; }
+.sheet-wrap { position: absolute; left: 0; right: 0; top: var(--vv-top, 0px); height: var(--vv-h, 100%); z-index: 50; pointer-events: none; }
 .sheet-wrap.open { pointer-events: auto; }
 .backdrop { position: absolute; inset: 0; background: var(--scrim); opacity: 0; transition: opacity .3s; }
 .sheet-wrap.open .backdrop { opacity: 1; }
@@ -119,9 +119,14 @@ button:focus-visible, input:focus-visible { outline: 2px solid var(--ink); outli
 .seg { display: grid; grid-template-columns: repeat(3, 1fr); background: var(--well); border-radius: 999px; padding: 4px; gap: 4px; }
 .seg button { border: 0; background: none; color: var(--muted); font-weight: 500; padding: 9px 0; border-radius: 999px; }
 .seg button.on { background: var(--ink); color: var(--bg); }
-.amount { display: flex; align-items: baseline; justify-content: center; gap: 4px; font: 400 3rem var(--f-body); letter-spacing: -.03em; padding: 6px 0; }
-.amount span { opacity: .45; font-size: .6em; }
-.amount input { width: 1.6ch; min-width: 1.6ch; max-width: 9ch; border: 0; background: none; font: inherit; outline: none; font-variant-numeric: tabular-nums; }
+.amount { display: flex; align-items: baseline; justify-content: center; gap: 4px; padding: 6px 0; min-width: 0;
+  font: 400 min(3rem, calc(21 / var(--len, 7) * 1rem + 3vw)) var(--f-body); letter-spacing: -.03em; font-variant-numeric: tabular-nums; }
+.amount > span:first-child { opacity: .45; font-size: .6em; }
+/* the input and an invisible copy of its text share one grid cell, so the field is always exactly as wide as what's typed */
+.amount-field { display: inline-grid; min-width: 0; max-width: calc(100% - 1em); }
+.amount-field::after { content: attr(data-v) ' '; grid-area: 1 / 1; visibility: hidden; white-space: pre; overflow: hidden; }
+.amount input { grid-area: 1 / 1; width: 100%; min-width: 1ch; padding: 0; margin: 0; border: 0; border-radius: 0; background: none;
+  font: inherit; letter-spacing: inherit; font-variant-numeric: inherit; outline: none; -webkit-appearance: none; appearance: none; }
 .quick { display: flex; gap: 8px; justify-content: center; }
 .quick button { border: 1px solid var(--line); background: var(--surface); border-radius: 999px; padding: 6px 14px; font: 500 .85rem var(--f-body); }
 .flabel { font: 500 .7rem var(--f-mono); letter-spacing: .06em; text-transform: uppercase; color: var(--muted); margin-bottom: -4px; }
