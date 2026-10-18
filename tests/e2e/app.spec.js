@@ -430,6 +430,24 @@ async function swipeLeft(page, row, distance = 160) {
 const balanceOf = (s, id) => s.transactions.reduce((a, t) =>
   a + (t.to === id ? t.amount : t.cat === id ? (t.type === 'add' ? t.amount : -t.amount) : 0), 0);
 
+test('when the keyboard comes up under an open sheet, the sheet slides up to it instead of jumping', async ({ page }) => {
+  await page.goto('/');
+  await page.locator('#bAdd').click();
+  await page.waitForTimeout(500);
+  const screen = await page.evaluate(() => innerHeight);
+  // the next frame after the visible area shrinks, the sheet still starts from about where it was
+  const first = await page.evaluate(h => new Promise(r => {
+    const card = document.querySelector('.sheet-wrap.open .sheet'), top = card.getBoundingClientRect().top;
+    document.documentElement.style.setProperty('--vv-h', h + 'px');
+    requestAnimationFrame(() => r(Math.abs(card.getBoundingClientRect().top - top)));
+  }), screen - 300);
+  expect(first).toBeLessThan(60);
+  // and it ends on the keyboard's edge
+  await expect.poll(() => page.locator('.sheet-wrap.open .sheet').evaluate(s => Math.round(s.getBoundingClientRect().bottom))).toBe(screen - 300);
+  await page.evaluate(() => document.documentElement.style.removeProperty('--vv-h'));
+  await page.keyboard.press('Escape');
+});
+
 test('a reached goal can be marked done: leftover moves, the rest is withdrawn, the category is archived', async ({ page }) => {
   await page.goto('/');
   await synced(page);

@@ -149,7 +149,27 @@ function sheet(content, label) {
   requestAnimationFrame(() => requestAnimationFrame(() => wrap.classList.add('open')));
   openSheet = wrap;
   swipeToClose(wrap);
+  glide(wrap);
   return wrap;
+}
+// The layer follows the visible area, so when the iOS keyboard comes or goes under an open sheet, the sheet would jump
+// to its new spot in one frame. Start it from where it was and let it slide there instead. The layer is watched rather
+// than the visualViewport events, since this runs after layout and before paint, whatever moved it.
+function glide(wrap) {
+  const card = wrap.querySelector('.sheet');
+  let was = null;
+  new ResizeObserver(() => {
+    const now = { bottom: wrap.offsetTop + wrap.offsetHeight, h: wrap.offsetHeight }, before = was;
+    was = now;
+    // not mid-drag (inline transition 'none'), not once it's closing
+    if (!before || reduced || wrap !== openSheet || card.style.transition === 'none') return;
+    // the card sits on the layer's bottom edge, at most 90% of its height (.sheet max-height)
+    const top = l => l.bottom - Math.min(card.scrollHeight, l.h * .9), d = top(before) - top(now);
+    if (Math.abs(d) < 1) return;
+    card.style.transition = 'none'; card.style.transform = `translateY(${d}px)`;
+    card.getBoundingClientRect(); // commit that start position before animating from it
+    card.style.transform = card.style.transition = '';
+  }).observe(wrap);
 }
 // drag a sheet down to dismiss it (and the keyboard with it); a short drag springs back
 function swipeToClose(wrap) {
