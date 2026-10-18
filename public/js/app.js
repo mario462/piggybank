@@ -422,8 +422,20 @@ function closeFull() {
   if (!full) return;
   const f = full; full = null;
   if (f.contains(document.activeElement)) document.activeElement.blur();
+  // Like closeSheet(): the screen is pinned above the keyboard, and that area only grows back once the keyboard has gone.
+  // Freeze it where it is, at its current size, and slide it past the bottom of the whole screen, so it doesn't stall
+  // above the old keyboard edge and then vanish when the viewport catches up.
+  const top = f.offsetTop;
+  f.style.top = top + 'px'; f.style.height = f.offsetHeight + 'px';
   f.inert = true; f.classList.remove('open');
+  f.style.transform = `translateY(${f.parentNode.clientHeight - top}px)`;
   setTimeout(() => f.remove(), 400);
+}
+// scroll a box just enough to show the element inside it (scrollIntoView would scroll every ancestor too)
+function showIn(box, el) {
+  const b = box.getBoundingClientRect(), r = el.getBoundingClientRect(), pad = 12;
+  if (r.bottom + pad > b.bottom) box.scrollTop += r.bottom + pad - b.bottom;
+  else if (r.top - pad < b.top) box.scrollTop -= b.top - r.top + pad;
 }
 function closeOut(id) {
   document.querySelector('.toast')?.remove();
@@ -440,7 +452,7 @@ function closeOut(id) {
   function update() {
     optsEl.replaceChildren(...opts.map(o => h('button', { class: 'opt' + (sel.k === o.k ? ' on' : ''), 'aria-pressed': String(sel.k === o.k),
       // focus inside the tap so iOS raises the keyboard
-      onclick: () => { sel.k = o.k; update(); if (o.k === 'other') field.focus(); } },
+      onclick: () => { sel.k = o.k; update(); if (o.k === 'other') { field.focus({ preventScroll: true }); showIn(bodyEl, field); } } },
       h('span', {}, o.t, h('small', {}, o.s)), o.amt != null ? h('span', { class: 'r' }, fmt(o.amt)) : null)));
     field.hidden = sel.k !== 'other';
     const s = spent(), left = v - s, b = balances(store.cats, store.txs);
@@ -471,13 +483,16 @@ function closeOut(id) {
     foot = h('button', { class: 'go', onclick: () => { closeFull(); openTx('transfer', { to: id }); } }, `Move ${fmt(-v)} in`);
   }
   const pct = c.goal ? Math.max(0, Math.min(100, v / c.goal * 100)) : 0;
+  const bodyEl = h('div', { class: 'full-body' }, h('div', { class: 'full-name' }, h('i'), c.name), big,
+    c.goal ? [h('div', { class: 'det-goal' }, h('span', {}, 'Goal ' + fmt(c.goal)), h('span', {}, Math.round(v / c.goal * 100) + '%')),
+      h('div', { class: 'det-line' }, h('i', { style: `width:${pct}%` }))] : null,
+    body);
+  // the keyboard rises after the field takes focus and squeezes this area: keep what's being typed above the button
+  new ResizeObserver(() => { if (bodyEl.contains(document.activeElement)) showIn(bodyEl, document.activeElement); }).observe(bodyEl);
   full = h('div', { class: 'full', role: 'dialog', 'aria-modal': 'true', 'aria-label': 'Close out ' + c.name, style: `--c:${c.color}` },
     h('div', { class: 'full-bar' }, h('button', { class: 'link', onclick: closeFull }, 'Cancel'),
       h('span', { class: 'label' }, c.goal ? 'Close out goal' : 'Close category'), h('span', { class: 'full-spacer' })),
-    h('div', { class: 'full-body' }, h('div', { class: 'full-name' }, h('i'), c.name), big,
-      c.goal ? [h('div', { class: 'det-goal' }, h('span', {}, 'Goal ' + fmt(c.goal)), h('span', {}, Math.round(v / c.goal * 100) + '%')),
-        h('div', { class: 'det-line' }, h('i', { style: `width:${pct}%` }))] : null,
-      body),
+    bodyEl,
     h('div', { class: 'full-foot' }, foot, h('p', { class: 'hint' }, 'It moves to Archived in the menu. Its history stays.')));
   field.addEventListener('input', update);
   field.addEventListener('keydown', e => { if (e.key === 'Enter') submit(); });
