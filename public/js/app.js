@@ -529,10 +529,11 @@ function toast(msg, undo, err = false) {
 }
 
 // ---- main views ----
+const loading = () => !store.loaded && (store.status === 'idle' || store.status === 'syncing');
 function syncText() {
   const p = store.pending;
   switch (store.status) {
-    case 'syncing': return 'Saving…';
+    case 'syncing': return store.loaded ? 'Saving…' : 'Loading…';
     case 'synced': return 'Synced';
     case 'offline': return p ? `Offline · ${p} to sync` : 'Offline';
     case 'signin': return 'Sign in to sync';
@@ -552,7 +553,11 @@ let shown = null, histFilter = 'all';
 function render() {
   const b = balances(store.cats, store.txs), tot = total(b);
   const empty = store.cats.length === 0;
-  $('#emptyState').hidden = !empty || !store.loaded && store.status === 'syncing';
+  // with no copy on this phone yet, an empty list means "not loaded", not "no categories": keep the welcome back until the
+  // first load has answered (or failed), instead of offering to start from scratch while the real data is on its way
+  $('#emptyState').hidden = !empty || loading();
+  // and the money buttons, which with nothing loaded would open "New category" too
+  document.querySelectorAll('.actions button').forEach(b => { b.disabled = loading(); });
   $('#overview').hidden = empty;
   if (empty) { renderActivity(); return; }
 
@@ -598,7 +603,7 @@ function go(to) {
 }
 
 store.on(ev => {
-  if (ev.type === 'status') return renderSync();
+  if (ev.type === 'status') { renderSync(); if (!store.loaded) render(); return; }
   if (ev.type === 'error') toast(ev.message, null, true);
   render(); renderSync();
 });
