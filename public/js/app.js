@@ -355,7 +355,7 @@ function archivedRow(c) {
 // ---- swipe a row left to reveal one action ----
 let openRow = null;
 function swipeable(row, { label, action, danger = false }) {
-  const W = 104;
+  const W = 104; // the action's 92px plus a 12px gap from the row, like iOS list swipe actions
   row.setAttribute('role', 'button'); row.tabIndex = 0;
   row.addEventListener('keydown', e => { if (e.key === 'Enter') row.click(); });
   const wrap = h('div', { class: 'swipe' }, h('button', { class: 'act' + (danger ? ' danger' : ''), tabindex: '-1', onclick: () => { shut(); action(); } }, label), row);
