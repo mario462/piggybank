@@ -298,6 +298,35 @@ test('swiping a category left reveals Mark done; a category below zero must be t
   await expect(full).toBeHidden();
 });
 
+test('closing out with the keyboard up: the amount stays in view, and Cancel slides the screen off the bottom', async ({ page }) => {
+  await page.goto('/');
+  await synced(page);
+  const screen = await page.evaluate(() => innerHeight);
+  await page.locator('#cats .cat', { hasText: 'Japan trip' }).click();
+  await page.getByRole('dialog', { name: 'Japan trip' }).getByRole('button', { name: 'Mark goal done' }).click();
+  const full = page.getByRole('dialog', { name: 'Close out Japan trip' });
+  await page.waitForTimeout(450);
+  await full.getByRole('button', { name: /A different amount/ }).click();
+  await expect(page.locator('#spent')).toBeFocused();
+  // the keyboard comes up after the focus, shrinking the visible area (see the sheet test above)
+  await page.evaluate(h => document.documentElement.style.setProperty('--vv-h', h + 'px'), screen - 300);
+  await expect.poll(() => page.locator('#spent').evaluate(f => {
+    const r = f.getBoundingClientRect(), body = f.closest('.full-body').getBoundingClientRect();
+    return r.top >= body.top && r.bottom <= body.bottom;
+  })).toBe(true);
+  const height = await full.evaluate(f => f.offsetHeight);
+  await full.getByRole('button', { name: 'Cancel' }).click();
+  // part-way out, before the viewport reports the keyboard gone, it is already below the old keyboard edge, at its own size
+  const mid = await page.evaluate(() => new Promise(r => setTimeout(() => {
+    const f = document.querySelector('.full');
+    r(f && { top: f.getBoundingClientRect().top, height: f.offsetHeight });
+  }, 220)));
+  expect(mid.top).toBeGreaterThan(screen - 300);
+  expect(mid.height).toBe(height);
+  await expect(page.locator('.full')).toHaveCount(0);
+  await page.evaluate(() => document.documentElement.style.removeProperty('--vv-h'));
+});
+
 test('archived categories are listed in the menu and can be restored', async ({ page }) => {
   await page.goto('/');
   await synced(page);
