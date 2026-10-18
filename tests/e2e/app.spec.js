@@ -93,6 +93,28 @@ test('undo removes the transaction everywhere', async ({ page }) => {
   await expect.poll(async () => (await serverState(page)).transactions.length).toBe(4);
 });
 
+test('the balance counts smoothly through a sync and an undo, never jumping', async ({ page }) => {
+  await page.goto('/');
+  await synced(page);
+  // read the number on every frame: up while the deposit counts in (the sync lands meanwhile), then straight down after Undo
+  const seen = await page.evaluate(async () => {
+    const out = [], read = () => Number(document.querySelector('#total').textContent.replace(/[^0-9.]/g, ''));
+    let on = true; const frame = () => { out.push(read()); if (on) requestAnimationFrame(frame); }; frame();
+    const s = window.piggy.store, tx = s.addTx({ type: 'add', cat: s.cats[0].id, amount: 50000, note: 'count' });
+    await new Promise(r => setTimeout(r, 250));
+    const undoAt = out.length; s.undoTx(tx.id);
+    await new Promise(r => setTimeout(r, 900)); on = false;
+    return { up: out.slice(0, undoAt), down: out.slice(undoAt) };
+  });
+  // one rise and one fall, turning where Undo was tapped (samples trail the screen by a frame), and back where it began
+  const all = [...seen.up, ...seen.down], top = all.indexOf(Math.max(...all));
+  const rising = all.slice(0, top + 1).every((v, i, a) => i === 0 || v >= a[i - 1]);
+  const falling = all.slice(top).every((v, i, a) => i === 0 || v <= a[i - 1]);
+  const turnsAtUndo = Math.max(...all) === Math.max(...seen.up, seen.down[0]);
+  expect({ rising, falling, turnsAtUndo, end: all.at(-1) }).toEqual({ rising: true, falling: true, turnsAtUndo: true, end: all[0] });
+  await synced(page);
+});
+
 test('category detail shows balance, goal and its own history', async ({ page }) => {
   await page.goto('/');
   await page.locator('.cat', { hasText: 'Nintendo' }).click();
