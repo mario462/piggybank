@@ -125,6 +125,21 @@ test('activity lists everything and filters by type', async ({ page }) => {
   await shot(page, '05-activity');
 });
 
+test('Activity slides in opaque over the overview and back out, never showing both at once', async ({ page }) => {
+  await page.goto('/');
+  // the screen sliding in or out stays fully opaque on every frame, so the overview never shows through it
+  const watch = (button, ms = 500) => page.evaluate(([button, ms]) => new Promise(done => {
+    const act = document.querySelector('#activity'), seen = new Set(), t0 = performance.now();
+    document.querySelector(button).click();
+    const frame = () => { seen.add(getComputedStyle(act).opacity); if (performance.now() - t0 < ms) requestAnimationFrame(frame); else done([...seen]); };
+    frame();
+  }), [button, ms]);
+  expect(await watch('#seeall')).toEqual(['1']);
+  await expect(page.locator('#activity')).toHaveCSS('transform', 'none');
+  expect(await watch('#back')).toEqual(['1']);
+  await expect(page.locator('#home')).toHaveCSS('opacity', '1');
+});
+
 test('works offline and syncs when back online', async ({ page, context }) => {
   await page.goto('/');
   await synced(page);
