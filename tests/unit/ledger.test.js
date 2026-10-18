@@ -50,6 +50,17 @@ test('parseAmount is exact and rejects junk', () => {
   assert.equal(parseAmount(''), 0);
 });
 
+test('parseAmount reads a comma typed as the decimal point', () => {
+  assert.equal(parseAmount('12,50'), 1250);
+  assert.equal(parseAmount('12,5'), 1250);
+  assert.equal(parseAmount('12,'), 1200);
+  assert.equal(parseAmount('0,99'), 99);
+  assert.equal(parseAmount('1.250,75'), 125075);
+  // a thousands comma has three digits after it
+  assert.equal(parseAmount('1,250'), 125000);
+  assert.equal(parseAmount('12,345,678'), 1234567800);
+});
+
 test('deleting a category keeps the money it moved with the other categories', () => {
   const cs = [{ id: 'a', name: 'Japan trip' }, { id: 'b', name: 'Savings' }];
   const ts = [
