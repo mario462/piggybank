@@ -140,13 +140,29 @@ button:focus-visible, input:focus-visible { outline: 2px solid var(--ink); outli
 .amount { display: flex; align-items: baseline; justify-content: center; gap: 4px; padding: 6px 0; min-width: 0;
   font: 400 min(3rem, calc(21 / var(--len, 7) * 1rem + 3vw)) var(--f-body); letter-spacing: -.03em; font-variant-numeric: tabular-nums; }
 .amount > span:first-child { opacity: .45; font-size: .6em; }
-/* the input and an invisible copy of its text share one grid cell, so the field is always exactly as wide as what's typed */
-.amount-field { display: inline-grid; min-width: 0; max-width: calc(100% - 1em); }
-.amount-field::after { content: attr(data-v) ' '; grid-area: 1 / 1; visibility: hidden; white-space: pre; overflow: hidden; }
-.amount input { grid-area: 1 / 1; width: 100%; min-width: 1ch; padding: 0; margin: 0; border: 0; border-radius: 0; background: none;
-  font: inherit; letter-spacing: inherit; font-variant-numeric: inherit; outline: none; -webkit-appearance: none; appearance: none; }
-.quick { display: flex; gap: 8px; justify-content: center; }
-.quick button { border: 1px solid var(--line); background: var(--surface); border-radius: 999px; padding: 6px 14px; font: 500 .85rem var(--f-body); }
+/* the amount is typed on the sheet's own keypad, so it is plain text with a drawn caret, not an input */
+.amount { cursor: text; }
+.amount-v { display: inline-flex; align-items: baseline; white-space: nowrap; min-width: 0; }
+.amount-v .ph { color: var(--faint); }
+.amount-v .new { display: inline-block; animation: key-in .18s cubic-bezier(.2, .9, .3, 1); }
+.caret { align-self: center; width: 2px; height: .82em; margin: 0 1px; border-radius: 1px; background: var(--ink); animation: blink 1.1s steps(1) infinite; }
+.amount.idle .caret { visibility: hidden; }
+.amount.shake { animation: shake .3s cubic-bezier(.3, .7, .4, 1); }
+@keyframes key-in { from { transform: translateY(.22em); opacity: 0; } }
+@keyframes blink { 55% { opacity: 0; } }
+@keyframes shake { 20% { transform: translateX(-7px); } 45% { transform: translateX(6px); } 70% { transform: translateX(-3px); } }
+.tx-form { gap: 10px; }
+/* the keypad folds away (0fr) while the note has the system keyboard */
+.kp-wrap { display: grid; grid-template-rows: 1fr; margin-top: 2px;
+  transition: grid-template-rows .32s cubic-bezier(.2, .9, .3, 1), opacity .22s, margin .32s cubic-bezier(.2, .9, .3, 1); }
+.kp-wrap.off { grid-template-rows: 0fr; opacity: 0; margin-top: -10px; }
+.keypad { min-height: 0; overflow: hidden; display: grid; grid-template-columns: repeat(3, 1fr); gap: 4px 8px; }
+.key { height: 52px; border: 0; border-radius: 12px; background: none; display: grid; place-items: center;
+  font: 400 1.6rem var(--f-body); letter-spacing: -.02em; font-variant-numeric: tabular-nums;
+  touch-action: manipulation; user-select: none; -webkit-user-select: none; -webkit-touch-callout: none;
+  transition: background-color .3s, transform .3s cubic-bezier(.2, .9, .3, 1); }
+.key:active { background: var(--well); transform: scale(.94); transition: none; }
+.key svg { width: 26px; height: 26px; color: var(--muted); }
 .flabel { font: 500 .7rem var(--f-mono); letter-spacing: .06em; text-transform: uppercase; color: var(--muted); margin-bottom: -4px; }
 .chips { display: flex; gap: 8px; overflow-x: auto; padding: 2px 2px 6px; scrollbar-width: none; }
 .chip { flex: none; display: flex; align-items: center; gap: 8px; border: 1px solid var(--line); background: var(--surface); border-radius: 12px; padding: 8px 12px 8px 10px; text-align: left; }
