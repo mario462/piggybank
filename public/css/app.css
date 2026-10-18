@@ -25,10 +25,10 @@ button { cursor: pointer; }
 button:focus-visible, input:focus-visible { outline: 2px solid var(--ink); outline-offset: 2px; }
 
 .app { position: relative; height: 100%; max-width: 480px; margin: 0 auto; overflow: hidden; padding-top: env(safe-area-inset-top, 0px); }
-/* a pushed screen slides in opaque over the one it covers, which drifts left and dims, so the two never show through each other */
-.view { position: absolute; inset: env(safe-area-inset-top, 0px) 0 0; overflow-y: auto; overflow-x: hidden; background: var(--bg);
+.view { position: absolute; inset: env(safe-area-inset-top, 0px) 0 0; overflow-y: auto; overflow-x: hidden;
   padding: 10px var(--gutter-r) calc(120px + env(safe-area-inset-bottom, 0px)) var(--gutter-l);
-  transition: transform .35s cubic-bezier(.2, .9, .3, 1), opacity .35s cubic-bezier(.2, .9, .3, 1); }
+  background: var(--bg); transition: transform .35s cubic-bezier(.2, .9, .3, 1), opacity .35s cubic-bezier(.2, .9, .3, 1); }
+/* a pushed screen slides in opaque over the one it covers, which drifts left and dims, so the two never show through each other */
 .view.off-right { transform: translateX(100%); pointer-events: none; }
 .view.off-left { transform: translateX(-25%); opacity: .3; pointer-events: none; }
 
