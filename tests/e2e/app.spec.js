@@ -189,6 +189,35 @@ test('long amounts are never clipped in the money sheet', async ({ page }) => {
   await page.keyboard.press('Escape');
 });
 
+// a real finger drag down from the top of the open sheet, through the browser's touch input
+async function swipeDown(page, distance) {
+  const box = await page.locator('.sheet-wrap.open .grab').boundingBox();
+  const x = box.x + box.width / 2, y = box.y + box.height / 2;
+  const cdp = await page.context().newCDPSession(page);
+  const touch = (type, dy) => cdp.send('Input.dispatchTouchEvent', { type, touchPoints: type === 'touchEnd' ? [] : [{ x, y: y + dy }] });
+  await touch('touchStart', 0);
+  for (let i = 1; i <= 10; i++) { await touch('touchMove', distance * i / 10); await page.waitForTimeout(16); }
+  await touch('touchEnd', distance);
+  await cdp.detach();
+}
+
+test('swiping the money sheet down dismisses it and the keyboard', async ({ page }) => {
+  await page.goto('/');
+  await page.locator('#bAdd').click();
+  const sheet = page.getByRole('dialog', { name: 'New transaction' });
+  await expect(page.locator('#amt')).toBeFocused();
+  await page.waitForTimeout(400); // let it finish sliding in
+  // a short drag springs back and keeps the amount focused
+  await swipeDown(page, 40);
+  await expect(sheet).toBeVisible();
+  await expect(page.locator('#amt')).toBeFocused();
+  await expect.poll(() => sheet.evaluate(d => d.style.transform)).toBe('');
+  // a long drag closes the sheet and blurs the amount, which puts the iOS keyboard away
+  await swipeDown(page, 260);
+  await expect(sheet).toBeHidden();
+  expect(await page.evaluate(() => document.activeElement?.tagName)).not.toBe('INPUT');
+});
+
 test('no horizontal scrolling at iPhone width', async ({ page }) => {
   await page.goto('/');
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
