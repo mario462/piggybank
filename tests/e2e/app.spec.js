@@ -270,6 +270,15 @@ test('the money sheet opens with the amount focused, inside the tap', async ({ p
   expect(fromDetail).toBe('amt');
 });
 
+test('a comma typed as the decimal point means cents, as iOS types it in many regions', async ({ page }) => {
+  await page.goto('/');
+  await page.locator('#bAdd').click();
+  await page.locator('#amt').fill('12,50');
+  await page.locator('.sheet-wrap.open .chip', { hasText: 'Concert' }).click();
+  await expect(page.locator('#go')).toHaveText('Add $12.50 to Concert');
+  await page.keyboard.press('Escape');
+});
+
 test('long amounts are never clipped in the money sheet', async ({ page }) => {
   await page.goto('/');
   await page.locator('#bAdd').click();

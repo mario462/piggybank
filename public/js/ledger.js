@@ -64,8 +64,12 @@ export function fmt(c, opts = {}) {
 }
 
 // "12", "12.5", "1,250.75", "$40" -> cents. Returns 0 for anything unusable.
+// A comma with at most two digits after it, at the end, is a decimal point: "12,50" is 12.50. iOS's decimal keypad types
+// a comma there in regions that write decimals that way. A thousands comma always has three digits after it ("1,250").
 export function parseAmount(str) {
-  const s = String(str ?? '').replace(/[$,\s]/g, '');
+  let s = String(str ?? '').replace(/[$\s]/g, '');
+  if (/,\d{0,2}$/.test(s)) s = s.replace(/\./g, '').replace(/,(?=\d{0,2}$)/, '.');
+  s = s.replace(/,/g, '');
   if (!/^\d*(\.\d{0,2})?$/.test(s) || s === '' || s === '.') return 0;
   const [whole, frac = ''] = s.split('.');
   return Number(whole || 0) * 100 + Number((frac + '00').slice(0, 2));
