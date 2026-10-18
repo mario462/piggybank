@@ -285,19 +285,6 @@ test('a reached goal can be marked done: leftover moves, the rest is withdrawn, 
   expect(s.transactions.slice(-2).map(t => [t.type, t.amount, t.note])).toEqual([['transfer', 1050, 'Leftover'], ['withdraw', 45000, 'Goal done']]);
 });
 
-test('swiping a category left reveals Mark done; a category below zero must be topped up first', async ({ page }) => {
-  await page.goto('/');
-  const row = page.locator('#cats .cat', { hasText: 'Concert' });
-  await swipeLeft(page, row);
-  expect(await row.evaluate(r => getComputedStyle(r).transform)).toBe('matrix(1, 0, 0, 1, -104, 0)');
-  await shot(page, '09-swiped');
-  await page.locator('#cats .swipe', { hasText: 'Concert' }).getByRole('button', { name: 'Mark done' }).click();
-  const full = page.getByRole('dialog', { name: 'Close out Concert' });
-  await expect(full).toContainText('Concert is at −$60.00');
-  await full.getByRole('button', { name: 'Cancel' }).click();
-  await expect(full).toBeHidden();
-});
-
 test('closing out with the keyboard up: the amount stays in view, and Cancel slides the screen off the bottom', async ({ page }) => {
   await page.goto('/');
   await synced(page);
@@ -325,6 +312,19 @@ test('closing out with the keyboard up: the amount stays in view, and Cancel sli
   expect(mid.height).toBe(height);
   await expect(page.locator('.full')).toHaveCount(0);
   await page.evaluate(() => document.documentElement.style.removeProperty('--vv-h'));
+});
+
+test('swiping a category left reveals Mark done; a category below zero must be topped up first', async ({ page }) => {
+  await page.goto('/');
+  const row = page.locator('#cats .cat', { hasText: 'Concert' });
+  await swipeLeft(page, row);
+  expect(await row.evaluate(r => getComputedStyle(r).transform)).toBe('matrix(1, 0, 0, 1, -104, 0)');
+  await shot(page, '09-swiped');
+  await page.locator('#cats .swipe', { hasText: 'Concert' }).getByRole('button', { name: 'Mark done' }).click();
+  const full = page.getByRole('dialog', { name: 'Close out Concert' });
+  await expect(full).toContainText('Concert is at −$60.00');
+  await full.getByRole('button', { name: 'Cancel' }).click();
+  await expect(full).toBeHidden();
 });
 
 test('archived categories are listed in the menu and can be restored', async ({ page }) => {
