@@ -107,6 +107,9 @@ let openSheet = null;
 function closeSheet() {
   if (!openSheet) return;
   const s = openSheet; openSheet = null;
+  // blurring the focused field is what puts the iOS keyboard away
+  if (s.contains(document.activeElement)) document.activeElement.blur();
+  const card = s.querySelector('.sheet'); card.style.transform = card.style.transition = ''; s.querySelector('.backdrop').style.opacity = '';
   // while it animates out, hide the closing sheet from input and assistive tech, and free its ids for the next sheet
   s.inert = true; s.setAttribute('aria-hidden', 'true');
   s.querySelectorAll('[id]').forEach(e => e.removeAttribute('id'));
@@ -121,7 +124,40 @@ function sheet(content, label) {
   $('.app').append(wrap);
   requestAnimationFrame(() => requestAnimationFrame(() => wrap.classList.add('open')));
   openSheet = wrap;
+  swipeToClose(wrap);
   return wrap;
+}
+// drag a sheet down to dismiss it (and the keyboard with it); a short drag springs back
+function swipeToClose(wrap) {
+  const card = wrap.querySelector('.sheet'), backdrop = wrap.querySelector('.backdrop');
+  let start = null, dy = 0, dragging = false;
+  const reset = () => { card.style.transform = card.style.transition = backdrop.style.opacity = ''; };
+  card.addEventListener('touchstart', e => {
+    start = e.touches.length === 1 && card.scrollTop <= 0 ? { x: e.touches[0].clientX, y: e.touches[0].clientY, t: e.timeStamp } : null;
+    dy = 0; dragging = false;
+  }, { passive: true });
+  card.addEventListener('touchmove', e => {
+    if (!start) return;
+    const x = e.touches[0].clientX - start.x, y = e.touches[0].clientY - start.y;
+    if (!dragging) {
+      if (Math.abs(x) > 8 && Math.abs(x) > Math.abs(y)) { start = null; return; } // sideways: let the chips scroll
+      if (y < 8 || y < Math.abs(x)) return;
+      dragging = true; card.style.transition = 'none'; backdrop.style.transition = 'none';
+    }
+    e.preventDefault();
+    dy = Math.max(0, y);
+    card.style.transform = `translateY(${dy}px)`;
+    backdrop.style.opacity = String(1 - Math.min(1, dy / card.offsetHeight));
+  }, { passive: false });
+  const end = e => {
+    if (!dragging) { start = null; return; }
+    const fast = dy > 30 && dy / Math.max(1, e.timeStamp - start.t) > 0.5;
+    start = null; dragging = false; backdrop.style.transition = '';
+    if (wrap === openSheet && (dy > Math.min(120, card.offsetHeight / 3) || fast)) closeSheet();
+    else reset();
+  };
+  card.addEventListener('touchend', end);
+  card.addEventListener('touchcancel', end);
 }
 addEventListener('keydown', e => { if (e.key === 'Escape') closeSheet(); });
 // keep sheets above the iOS keyboard: pin the sheet layer to the part of the page that is actually visible

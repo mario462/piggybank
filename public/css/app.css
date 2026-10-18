@@ -109,7 +109,7 @@ button:focus-visible, input:focus-visible { outline: 2px solid var(--ink); outli
 .sheet-wrap.open { pointer-events: auto; }
 .backdrop { position: absolute; inset: 0; background: var(--scrim); opacity: 0; transition: opacity .3s; }
 .sheet-wrap.open .backdrop { opacity: 1; }
-.sheet { position: absolute; left: 0; right: 0; bottom: 0; max-height: 90%; overflow: auto; background: var(--sheet);
+.sheet { position: absolute; left: 0; right: 0; bottom: 0; max-height: 90%; overflow: auto; overscroll-behavior: contain; background: var(--sheet);
   border-radius: 20px 20px 0 0; padding: 10px var(--gutter-r) calc(22px + env(safe-area-inset-bottom, 0px)) var(--gutter-l);
   transform: translateY(100%); transition: transform .34s cubic-bezier(.2, .9, .3, 1); }
 .sheet-wrap.open .sheet { transform: none; }
