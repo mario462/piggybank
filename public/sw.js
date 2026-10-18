@@ -1,6 +1,6 @@
 // Offline support: keep the app shell cached so it opens without signal.
 // API calls are never cached; the app keeps its own copy of the data.
-const VERSION = 'piggy-v1';
+const VERSION = 'piggy-v2';
 const SHELL = [
   '/', '/css/app.css', '/js/app.js', '/js/ledger.js', '/js/store.js', '/manifest.webmanifest',
   '/icons/icon.svg', '/icons/apple-touch-icon.png', '/icons/icon-192.png',

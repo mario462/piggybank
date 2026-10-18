@@ -7,7 +7,8 @@ const SCHEMA = [
      name TEXT NOT NULL,
      color TEXT NOT NULL,
      goal INTEGER NOT NULL DEFAULT 0,
-     created_at INTEGER NOT NULL
+     created_at INTEGER NOT NULL,
+     archived_at INTEGER
    )`,
   `CREATE TABLE IF NOT EXISTS transactions (
      id TEXT PRIMARY KEY,
@@ -23,9 +24,18 @@ const SCHEMA = [
   `CREATE INDEX IF NOT EXISTS tx_t ON transactions (t, seq)`,
 ];
 
+// columns added after the first release, for databases created before them
+const ADDED = [['categories', 'archived_at', 'INTEGER']];
+
 let ready = null;
 export function ensureSchema(db) {
-  ready ??= db.batch(SCHEMA.map(s => db.prepare(s))).catch(e => { ready = null; throw e; });
+  ready ??= (async () => {
+    await db.batch(SCHEMA.map(s => db.prepare(s)));
+    for (const [table, col, type] of ADDED) {
+      const { results } = await db.prepare(`PRAGMA table_info(${table})`).all();
+      if (!results.some(r => r.name === col)) await db.prepare(`ALTER TABLE ${table} ADD COLUMN ${col} ${type}`).run();
+    }
+  })().catch(e => { ready = null; throw e; });
   return ready;
 }
 
@@ -33,7 +43,7 @@ const rowToTx = r => ({ id: r.id, seq: r.seq, type: r.type, cat: r.cat, to: r.to
 
 export async function getState(db) {
   const [cats, txs] = await db.batch([
-    db.prepare('SELECT id, name, color, goal FROM categories ORDER BY created_at, id'),
+    db.prepare('SELECT id, name, color, goal, archived_at AS archived FROM categories ORDER BY created_at, id'),
     db.prepare('SELECT * FROM transactions ORDER BY t, seq'),
   ]);
   return { categories: cats.results, transactions: txs.results.map(rowToTx) };
@@ -65,16 +75,37 @@ export async function insertCategory(db, c, now = Date.now()) {
   return r.meta.changes > 0;
 }
 
+const COLUMN = { name: 'name', color: 'color', goal: 'goal', archived: 'archived_at' };
+
 export async function updateCategory(db, id, fields) {
   const keys = Object.keys(fields); // already whitelisted by validateCategory
-  const r = await db.prepare(`UPDATE categories SET ${keys.map(k => `${k} = ?`).join(', ')} WHERE id = ?`)
+  const r = await db.prepare(`UPDATE categories SET ${keys.map(k => `${COLUMN[k]} = ?`).join(', ')} WHERE id = ?`)
     .bind(...keys.map(k => fields[k]), id).run();
   return r.meta.changes > 0;
 }
 
+// An active category can only be deleted while it has no history. An archived one is deleted with its history,
+// as long as it holds no money: moves between it and other categories become deposits to or withdrawals from
+// those categories, so their balances stay the same. Mirrors dropCategory() in public/js/ledger.js.
 export async function deleteCategory(db, id) {
-  const used = await db.prepare('SELECT 1 FROM transactions WHERE cat = ? OR to_cat = ? LIMIT 1').bind(id, id).first();
-  if (used) return 'in-use';
-  const r = await db.prepare('DELETE FROM categories WHERE id = ?').bind(id).run();
+  const c = await db.prepare('SELECT name, archived_at FROM categories WHERE id = ?').bind(id).first();
+  if (!c) return 'missing';
+  if (c.archived_at == null) {
+    const used = await db.prepare('SELECT 1 FROM transactions WHERE cat = ? OR to_cat = ? LIMIT 1').bind(id, id).first();
+    if (used) return 'in-use';
+  } else {
+    const { b } = await db.prepare(`SELECT COALESCE(SUM(CASE WHEN to_cat = ? THEN amount WHEN type = 'add' THEN amount ELSE -amount END), 0) AS b
+      FROM transactions WHERE cat = ? OR to_cat = ?`).bind(id, id, id).first();
+    if (b !== 0) return 'not-empty';
+  }
+  const note = `CASE WHEN note = '' THEN ? ELSE substr(note || ' · ' || ?, 1, 200) END`;
+  const [, , , r] = await db.batch([
+    db.prepare(`UPDATE transactions SET type = 'add', cat = to_cat, to_cat = NULL, note = ${note} WHERE cat = ? AND type = 'transfer'`)
+      .bind(`From ${c.name}`, `from ${c.name}`, id),
+    db.prepare(`UPDATE transactions SET type = 'withdraw', to_cat = NULL, note = ${note} WHERE to_cat = ?`)
+      .bind(`To ${c.name}`, `to ${c.name}`, id),
+    db.prepare('DELETE FROM transactions WHERE cat = ?').bind(id),
+    db.prepare('DELETE FROM categories WHERE id = ?').bind(id),
+  ]);
   return r.meta.changes > 0 ? 'deleted' : 'missing';
 }

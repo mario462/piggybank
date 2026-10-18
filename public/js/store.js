@@ -2,7 +2,7 @@
 // Every change is applied on the phone immediately, saved to localStorage, and queued.
 // The queue is sent in order whenever we are online; the server ignores duplicates by id.
 
-import { sortTxs, newId } from './ledger.js';
+import { sortTxs, newId, dropCategory } from './ledger.js';
 
 const STATE_KEY = 'pb:state';
 const OUTBOX_KEY = 'pb:outbox';
@@ -45,7 +45,7 @@ export function applyOp(state, op) {
     case 'deltx': state.txs = state.txs.filter(t => t.id !== op.id); break;
     case 'cat': if (!state.cats.some(c => c.id === op.body.id)) state.cats.push({ ...op.body }); break;
     case 'patchcat': state.cats = state.cats.map(c => c.id === op.id ? { ...c, ...op.body } : c); break;
-    case 'delcat': state.cats = state.cats.filter(c => c.id !== op.id); break;
+    case 'delcat': Object.assign(state, dropCategory(state.cats, state.txs, op.id)); break;
   }
   state.txs = sortTxs(state.txs);
   return state;

@@ -6,6 +6,9 @@ const DAY = 864e5;
 const reduced = matchMedia('(prefers-reduced-motion: reduce)').matches;
 const store = createStore();
 const $ = s => document.querySelector(s);
+// archived categories are finished goals: kept for their history, out of the overview and the money sheet
+const active = () => store.cats.filter(c => !c.archived);
+const archived = () => store.cats.filter(c => c.archived).sort((a, b) => b.archived - a.archived);
 
 // ---- tiny DOM helper ----
 function h(tag, attrs = {}, ...kids) {
@@ -20,6 +23,10 @@ function h(tag, attrs = {}, ...kids) {
   for (const k of kids.flat()) if (k != null && k !== false) e.append(k.nodeType ? k : String(k));
   return e;
 }
+const ICONS = {
+  back: '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M15 5l-7 7 7 7"/></svg>',
+  close: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><path d="M6 6l12 12M18 6 6 18"/></svg>',
+};
 const svg = markup => { const t = document.createElement('template'); t.innerHTML = markup.trim(); return t.content.firstChild; };
 
 function money(el, c) {
@@ -168,7 +175,7 @@ function swipeToClose(wrap) {
   card.addEventListener('touchend', end);
   card.addEventListener('touchcancel', end);
 }
-addEventListener('keydown', e => { if (e.key === 'Escape') closeSheet(); });
+addEventListener('keydown', e => { if (e.key !== 'Escape') return; if (openSheet) closeSheet(); else if (full) closeFull(); else closeMenu(); });
 // keep sheets above the iOS keyboard: pin the sheet layer to the part of the page that is actually visible
 if (window.visualViewport) {
   const vv = visualViewport, fit = () => {
@@ -179,7 +186,7 @@ if (window.visualViewport) {
 }
 
 function openTx(type = 'add', o = {}) {
-  if (!store.cats.length) return openCategory();
+  if (!active().length) return openCategory();
   const sel = { type, a: o.cat || null, b: o.to || null };
   const amt = h('input', { id: 'amt', inputmode: 'decimal', autocomplete: 'off', placeholder: '0', maxlength: '12', size: '1', 'aria-label': 'Amount' });
   const field = h('span', { class: 'amount-field' }, amt);
@@ -198,7 +205,7 @@ function openTx(type = 'add', o = {}) {
 
   function chips(row, key, other) {
     const b = balances(store.cats, store.txs);
-    row.replaceChildren(...store.cats.map(c => h('button', {
+    row.replaceChildren(...active().map(c => h('button', {
       class: 'chip' + (sel[key] === c.id ? ' on' : '') + (other === c.id ? ' dim' : ''), style: `--c:${c.color}`,
       onclick: () => { sel[key] = c.id; if (key === 'a' && sel.b === c.id) sel.b = null; update(); },
     }, h('i', { class: 'dot' }), h('span', { class: 'chip-t' }, h('b', {}, c.name), h('small', {}, fmt(b[c.id], { whole: true }))))));
@@ -273,6 +280,7 @@ function openCategory(id) {
 
 function openDetail(id) {
   const c = store.cat(id); if (!c) return;
+  if (c.archived) return openArchived(id);
   const v = balances(store.cats, store.txs)[id], pct = c.goal ? Math.max(0, Math.min(100, v / c.goal * 100)) : 0;
   const big = h('div', { class: 'total' + (v < 0 ? ' neg' : '') }); money(big, v);
   const chart = h('div', { class: 'chart' }); chart.innerHTML = chartSVG(chartPoints(id), 400, 70, c.color);
@@ -286,25 +294,227 @@ function openDetail(id) {
       h('button', { onclick: () => openTx('add', { cat: id }) }, 'Add'),
       h('button', { onclick: () => openTx('withdraw', { cat: id }) }, 'Withdraw'),
       h('button', { onclick: () => openTx('transfer', { cat: id }) }, 'Move')),
+    h('button', { class: 'link det-more', onclick: () => { closeSheet(); closeOut(id); } }, c.goal ? 'Mark goal done' : 'Close category'),
     h('div', { class: 'label', style: 'margin-top:14px' }, 'History'), h('div', { id: 'dethist' }));
   sheet(body, c.name);
   renderHistory(body.querySelector('#dethist'), { catId: id });
   setTimeout(() => drawLine(chart), 250);
 }
 
+// ---- side menu: categories, archived categories, and app actions ----
+let drawer = null;
 function openMenu() {
-  sheet(h('div', { class: 'menu' },
-    h('button', { onclick: () => { closeSheet(); setTimeout(() => openCategory(), 330); } }, 'New category', h('small', {}, 'Add something to save for')),
-    h('button', { id: 'export', onclick: exportBackup }, 'Export backup', h('small', {}, 'Download all categories and transactions as JSON')),
-    h('button', { onclick: () => { closeSheet(); store.flush(); } }, 'Sync now', h('small', {}, syncText()))), 'Menu');
+  closeSheet();
+  drawer = h('div', { class: 'drawer-wrap' }, h('div', { class: 'backdrop', onclick: closeMenu }),
+    h('nav', { class: 'drawer', 'aria-label': 'Menu' }));
+  $('.app').append(drawer);
+  renderMenu();
+  requestAnimationFrame(() => requestAnimationFrame(() => drawer?.classList.add('open')));
 }
+function closeMenu(then) {
+  if (!drawer) return typeof then === 'function' && then();
+  const d = drawer; drawer = null;
+  d.inert = true; d.classList.remove('open');
+  setTimeout(() => d.remove(), 340);
+  if (typeof then === 'function') setTimeout(then, 200);
+}
+function renderMenu() {
+  if (!drawer) return;
+  const b = balances(store.cats, store.txs), arch = archived();
+  const count = n => h('span', { class: 'label count' }, n);
+  drawer.querySelector('.drawer').replaceChildren(...[
+    h('div', { class: 'bar' }, brand(), h('button', { class: 'icon-btn', 'aria-label': 'Close menu', onclick: closeMenu }, svg(ICONS.close))),
+    h('div', { class: 'sec-h' }, h('span', { class: 'label' }, 'Categories'), count(active().length)),
+    active().map(c => h('button', { class: 'drow', style: `--c:${c.color}`, onclick: () => closeMenu(() => openDetail(c.id)) },
+      h('span', { class: 'dot' }), h('b', {}, c.name), h('span', { class: 'amt' + (b[c.id] < 0 ? ' neg' : '') }, fmt(b[c.id], { whole: true })))),
+    h('div', { class: 'sec-h' }, h('span', { class: 'label' }, 'Archived'), count(arch.length)),
+    arch.length ? [h('p', { class: 'swipe-hint' }, 'Swipe one left to delete it.'), byYear(arch)] : h('p', { class: 'swipe-hint' }, 'Goals you mark done end up here.'),
+    h('div', { class: 'menu' },
+      h('button', { onclick: () => closeMenu(() => openCategory()) }, 'New category', h('small', {}, 'Add something to save for')),
+      h('button', { id: 'export', onclick: exportBackup }, 'Export backup', h('small', {}, 'Download all categories and transactions as JSON')),
+      h('button', { onclick: () => { closeMenu(); store.flush(); } }, 'Sync now', h('small', {}, syncText()))),
+  ].flat(2));
+}
+function byYear(list) {
+  const out = []; let year = null;
+  for (const c of list) {
+    const y = new Date(c.archived).getFullYear();
+    if (y !== year) { out.push(h('div', { class: 'day' }, String(y))); year = y; }
+    out.push(swipeable(archivedRow(c), { label: 'Delete', danger: true, action: () => confirmDelete(c.id) }));
+  }
+  return out;
+}
+const spentFrom = id => store.txs.reduce((a, t) => a + (t.type === 'withdraw' && t.cat === id ? t.amount : 0), 0);
+const shortDate = (t, year) => new Date(t).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: year ? 'numeric' : undefined });
+function archivedRow(c) {
+  return h('div', { class: 'cat arch', style: `--c:${c.color}`, 'data-cat': c.id, onclick: () => closeMenu(() => openArchived(c.id)) },
+    h('span', { class: 'dot' }), h('b', {}, c.name), h('span', { class: 'amt' }, fmt(spentFrom(c.id))),
+    h('span', { class: 'prog' }, h('small', {}, (c.goal ? 'Done ' : 'Closed ') + shortDate(c.archived)), h('small', {}, c.goal ? `goal ${fmt(c.goal, { whole: true })}` : 'spent')));
+}
+
+// ---- swipe a row left to reveal one action ----
+let openRow = null;
+function swipeable(row, { label, action, danger = false }) {
+  const W = 104;
+  row.setAttribute('role', 'button'); row.tabIndex = 0;
+  row.addEventListener('keydown', e => { if (e.key === 'Enter') row.click(); });
+  const wrap = h('div', { class: 'swipe' }, h('button', { class: 'act' + (danger ? ' danger' : ''), tabindex: '-1', onclick: () => { shut(); action(); } }, label), row);
+  let x0 = null, y0 = 0, dx = 0, base = 0, drag = false, isOpen = false;
+  const shut = () => { isOpen = false; row.style.transform = ''; if (openRow === shut) openRow = null; };
+  // a tap on an open row closes it instead of opening the row
+  row.addEventListener('click', e => { if (drag || isOpen) { e.stopImmediatePropagation(); if (!drag) shut(); } }, true);
+  row.addEventListener('pointerdown', e => { x0 = e.clientX; y0 = e.clientY; drag = false; base = dx = isOpen ? -W : 0; });
+  row.addEventListener('pointermove', e => {
+    if (x0 == null) return;
+    const mx = e.clientX - x0, my = e.clientY - y0;
+    if (!drag) {
+      if (Math.abs(my) > 8 && Math.abs(my) >= Math.abs(mx)) { x0 = null; return; } // scrolling the list
+      if (Math.abs(mx) < 8) return;
+      drag = true; row.setPointerCapture(e.pointerId); row.style.transition = 'none';
+      if (openRow && openRow !== shut) openRow();
+    }
+    dx = Math.min(0, Math.max(-W * 1.5, base + mx));
+    row.style.transform = `translateX(${dx}px)`;
+  });
+  const end = () => {
+    if (x0 == null) return;
+    x0 = null; row.style.transition = '';
+    if (!drag) return;
+    isOpen = dx < -W / 2;
+    row.style.transform = isOpen ? `translateX(${-W}px)` : '';
+    if (isOpen) openRow = shut;
+    setTimeout(() => { drag = false; }); // after the click this drag ends with
+  };
+  row.addEventListener('pointerup', end);
+  row.addEventListener('pointercancel', end);
+  return wrap;
+}
+
+// ---- mark a goal done: move any leftover, withdraw what was spent, archive ----
+function markDone(id, spent, to) {
+  const c = store.cat(id), left = balances(store.cats, store.txs)[id] - spent, txs = [];
+  if (left > 0) txs.push(store.addTx({ type: 'transfer', cat: id, to, amount: left, note: 'Leftover' }));
+  if (spent > 0) txs.push(store.addTx({ type: 'withdraw', cat: id, amount: spent, note: c.goal ? 'Goal done' : 'Closed' }));
+  store.updateCategory(id, { archived: Date.now() });
+  toast(`${c.name} archived`, () => {
+    store.updateCategory(id, { archived: null });
+    txs.reverse().forEach(t => store.undoTx(t.id));
+  });
+}
+let full = null;
+function closeFull() {
+  if (!full) return;
+  const f = full; full = null;
+  if (f.contains(document.activeElement)) document.activeElement.blur();
+  f.inert = true; f.classList.remove('open');
+  setTimeout(() => f.remove(), 400);
+}
+function closeOut(id) {
+  document.querySelector('.toast')?.remove();
+  const c = store.cat(id), v = balances(store.cats, store.txs)[id];
+  const opts = [{ k: 'all', t: 'All of it', s: 'Withdraw the full balance', amt: v }];
+  if (c.goal && v > c.goal) opts.push({ k: 'goal', t: 'The goal amount', s: `${fmt(v - c.goal)} is left over`, amt: c.goal });
+  opts.push({ k: 'other', t: 'A different amount', s: 'Type what it actually cost', amt: null });
+  const sel = { k: 'all', to: active().find(o => o.id !== id)?.id };
+  const field = h('input', { id: 'spent', class: 'field', inputmode: 'decimal', autocomplete: 'off', placeholder: '$0.00', maxlength: '12', 'aria-label': 'Amount spent' });
+  const optsEl = h('div', { class: 'opts' }), leftLab = h('div', { class: 'flabel' }), leftRow = h('div', { class: 'chips' }), hint = h('div', { class: 'hint' });
+  const go = h('button', { class: 'go', id: 'closeGo', onclick: submit });
+  const big = h('div', { class: 'total' + (v < 0 ? ' neg' : '') }); money(big, v);
+  const spent = () => sel.k === 'other' ? parseAmount(field.value) : opts.find(o => o.k === sel.k).amt;
+  function update() {
+    optsEl.replaceChildren(...opts.map(o => h('button', { class: 'opt' + (sel.k === o.k ? ' on' : ''), 'aria-pressed': String(sel.k === o.k),
+      // focus inside the tap so iOS raises the keyboard
+      onclick: () => { sel.k = o.k; update(); if (o.k === 'other') field.focus(); } },
+      h('span', {}, o.t, h('small', {}, o.s)), o.amt != null ? h('span', { class: 'r' }, fmt(o.amt)) : null)));
+    field.hidden = sel.k !== 'other';
+    const s = spent(), left = v - s, b = balances(store.cats, store.txs);
+    leftLab.hidden = leftRow.hidden = !(left > 0 && s > 0);
+    leftLab.textContent = `The other ${fmt(left)} goes to`;
+    leftRow.replaceChildren(...active().filter(o => o.id !== id).map(o => h('button', {
+      class: 'chip' + (sel.to === o.id ? ' on' : ''), style: `--c:${o.color}`, onclick: () => { sel.to = o.id; update(); },
+    }, h('i', { class: 'dot' }), h('span', { class: 'chip-t' }, h('b', {}, o.name), h('small', {}, fmt(b[o.id], { whole: true }))))));
+    hint.className = 'hint' + (left < 0 ? ' warn' : '');
+    hint.textContent = left < 0 ? `That's more than the ${fmt(v)} in ${c.name}.` : left > 0 && !sel.to ? 'Make another category for the rest first.' : '';
+    go.disabled = !(s > 0) || left < 0 || (left > 0 && !sel.to);
+    go.textContent = !(s > 0) ? 'Enter what you spent' : `Withdraw ${fmt(s)} and archive`;
+  }
+  function submit() {
+    if (go.disabled) return;
+    markDone(id, spent(), sel.to);
+    closeFull();
+  }
+  let body, foot;
+  if (v > 0) {
+    body = [h('div', { class: 'flabel', style: 'margin-top:14px' }, 'How much did you spend?'), optsEl, field, leftLab, leftRow, hint];
+    foot = go;
+  } else if (v === 0) {
+    body = h('p', { class: 'hint' }, `${c.name} is empty, so nothing is withdrawn.`);
+    foot = h('button', { class: 'go', id: 'closeGo', onclick: () => { markDone(id, 0); closeFull(); } }, 'Archive');
+  } else {
+    body = h('p', { class: 'hint warn' }, `${c.name} is at ${fmt(v)}. Move money in to bring it to zero, then close it.`);
+    foot = h('button', { class: 'go', onclick: () => { closeFull(); openTx('transfer', { to: id }); } }, `Move ${fmt(-v)} in`);
+  }
+  const pct = c.goal ? Math.max(0, Math.min(100, v / c.goal * 100)) : 0;
+  full = h('div', { class: 'full', role: 'dialog', 'aria-modal': 'true', 'aria-label': 'Close out ' + c.name, style: `--c:${c.color}` },
+    h('div', { class: 'full-bar' }, h('button', { class: 'link', onclick: closeFull }, 'Cancel'),
+      h('span', { class: 'label' }, c.goal ? 'Close out goal' : 'Close category'), h('span', { class: 'full-spacer' })),
+    h('div', { class: 'full-body' }, h('div', { class: 'full-name' }, h('i'), c.name), big,
+      c.goal ? [h('div', { class: 'det-goal' }, h('span', {}, 'Goal ' + fmt(c.goal)), h('span', {}, Math.round(v / c.goal * 100) + '%')),
+        h('div', { class: 'det-line' }, h('i', { style: `width:${pct}%` }))] : null,
+      body),
+    h('div', { class: 'full-foot' }, foot, h('p', { class: 'hint' }, 'It moves to Archived in the menu. Its history stays.')));
+  field.addEventListener('input', update);
+  field.addEventListener('keydown', e => { if (e.key === 'Enter') submit(); });
+  $('.app').append(full);
+  requestAnimationFrame(() => requestAnimationFrame(() => full?.classList.add('open')));
+  if (v > 0) update();
+}
+
+// ---- archived categories ----
+function openArchived(id) {
+  const c = store.cat(id); if (!c) return;
+  const first = store.txs.find(t => t.cat === id || t.to === id);
+  const months = first ? Math.max(1, Math.round((c.archived - first.t) / (30.4 * DAY))) : 0;
+  const big = h('div', { class: 'total' }); money(big, spentFrom(id));
+  const chart = h('div', { class: 'chart' }); chart.innerHTML = chartSVG(chartPoints(id), 400, 70, c.color);
+  const body = h('div', { class: 'det', style: `--c:${c.color}` },
+    h('h3', { class: 'arch' }, h('i'), c.name, h('span', { class: 'tag' }, 'Archived')),
+    h('div', { class: 'label', style: 'margin-top:14px' }, 'Spent'), big,
+    h('div', { class: 'meta' }, c.goal ? h('span', {}, 'Goal ' + fmt(c.goal, { whole: true })) : null,
+      h('span', {}, (c.goal ? 'Done ' : 'Closed ') + shortDate(c.archived, true)),
+      months ? h('span', {}, `Saved over ${months} ${months === 1 ? 'month' : 'months'}`) : null),
+    chart,
+    h('div', { class: 'row2', style: 'margin:20px 0 8px' },
+      h('button', { class: 'go ghost', onclick: () => { closeSheet(); restore(id); } }, 'Restore'),
+      h('button', { class: 'go danger', onclick: () => confirmDelete(id) }, 'Delete')),
+    h('div', { class: 'label', style: 'margin-top:14px' }, 'History'), h('div', { id: 'dethist' }));
+  sheet(body, c.name);
+  renderHistory(body.querySelector('#dethist'), { catId: id });
+  setTimeout(() => drawLine(chart), 250);
+}
+function restore(id) {
+  const c = store.cat(id), at = c.archived;
+  store.updateCategory(id, { archived: null });
+  toast(`${c.name} is back in your categories`, () => store.updateCategory(id, { archived: at }));
+}
+function confirmDelete(id) {
+  const c = store.cat(id); if (!c) return;
+  const n = store.txs.filter(t => t.cat === id || t.to === id).length;
+  const moves = store.txs.some(t => t.type === 'transfer' && (t.cat === id || t.to === id));
+  sheet(h('div', { class: 'form' }, h('h3', { class: 'sheet-title' }, `Delete ${c.name}?`),
+    h('p', { class: 'sheet-p' }, `This removes ${c.name} and its ${n} ${n === 1 ? 'transaction' : 'transactions'} for good.` +
+      (moves ? ' Money it moved to or from other categories stays with them.' : '')),
+    h('button', { class: 'go danger', id: 'confirmDelete', onclick: () => { store.deleteCategory(id); closeSheet(); toast(`Deleted ${c.name}`); } }, 'Delete category'),
+    h('button', { class: 'link', onclick: closeSheet }, 'Cancel')), 'Delete category');
+}
+
 function exportBackup() {
   const data = { exportedAt: new Date().toISOString(), categories: store.cats, transactions: store.txs };
   const url = URL.createObjectURL(new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' }));
   const a = h('a', { href: url, download: `piggybank-${new Date().toISOString().slice(0, 10)}.json` });
   document.body.append(a); a.click(); a.remove();
   setTimeout(() => URL.revokeObjectURL(url), 5000);
-  closeSheet();
+  closeSheet(); closeMenu();
 }
 
 let toastTimer;
@@ -334,7 +544,9 @@ function renderSync() {
   const el = $('#sync');
   el.dataset.s = store.status;
   el.replaceChildren(h('i'), syncText());
+  renderMenu();
 }
+const brand = () => $('#home .brand').cloneNode(true);
 
 let shown = null, histFilter = 'all';
 function render() {
@@ -350,21 +562,29 @@ function render() {
   shown = tot;
   const wk = netSince(store.txs, Date.now() - 7 * DAY), owe = borrowed(b);
   $('#meta').replaceChildren(h('span', { class: wk >= 0 ? 'up' : 'down' }, `${fmt(wk, { sign: true })} this week`),
-    owe ? h('span', {}, `${fmt(owe)} borrowed`) : '', h('span', {}, `${store.cats.length} ${store.cats.length === 1 ? 'category' : 'categories'}`));
+    owe ? h('span', {}, `${fmt(owe)} borrowed`) : '', h('span', {}, `${active().length} ${active().length === 1 ? 'category' : 'categories'}`));
   const chart = $('#chart'), html = chartSVG(chartPoints(), 400, 84);
   if (chart.dataset.html !== html) { chart.innerHTML = html; chart.dataset.html = html; drawLine(chart); }
-  $('#alloc').replaceChildren(...store.cats.filter(c => b[c.id] > 0).map(c => h('i', { style: `--c:${c.color};flex-grow:${b[c.id]}`, title: c.name })));
+  $('#alloc').replaceChildren(...active().filter(c => b[c.id] > 0).map(c => h('i', { style: `--c:${c.color};flex-grow:${b[c.id]}`, title: c.name })));
 
-  $('#cats').replaceChildren(...store.cats.map(c => {
+  openRow = null;
+  const cats = active();
+  $('#swipeHint').hidden = !cats.length;
+  $('#cats').replaceChildren(...(cats.length ? cats.map(c => {
     const v = b[c.id], pct = c.goal ? Math.max(0, Math.min(100, v / c.goal * 100)) : 0;
+    const reached = c.goal > 0 && v >= c.goal;
     const line = h('i', { style: `width:${pct}%` });
-    return h('button', { class: 'cat', style: `--c:${c.color}`, onclick: () => openDetail(c.id), 'data-cat': c.id },
+    const row = h('div', { class: 'cat', style: `--c:${c.color}`, onclick: () => openDetail(c.id), 'data-cat': c.id },
       h('span', { class: 'dot' }), h('b', {}, c.name), h('span', { class: 'amt' + (v < 0 ? ' neg' : '') }, fmt(v)),
       h('span', { class: 'prog' }, h('span', { class: 'line' }, line),
-        h('small', {}, v < 0 ? 'borrowed' : c.goal ? `${Math.round(pct)}% of ${fmt(c.goal, { whole: true })}` : 'no goal')));
-  }));
+        h('small', { class: reached ? 'good' : '' }, v < 0 ? 'borrowed' : reached ? (v > c.goal ? `Goal reached · ${fmt(v - c.goal, { whole: true })} over` : 'Goal reached')
+          : c.goal ? `${Math.round(pct)}% of ${fmt(c.goal, { whole: true })}` : 'no goal'),
+        reached ? h('button', { class: 'pill', onclick: e => { e.stopPropagation(); closeOut(c.id); } }, 'Mark done') : null));
+    return swipeable(row, { label: c.goal ? 'Mark done' : 'Close', action: () => closeOut(c.id) });
+  }) : [h('p', { class: 'none' }, 'Everything is archived. Add a category to start saving again.')]));
   renderHistory($('#recent'), { limit: 4 });
   renderActivity();
+  renderMenu();
 }
 function renderActivity() {
   $('#filters').replaceChildren(...[['all', 'All'], ['add', 'In'], ['withdraw', 'Out'], ['transfer', 'Moves']].map(([k, l]) =>
