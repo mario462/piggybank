@@ -109,12 +109,21 @@ function closeSheet() {
   const s = openSheet; openSheet = null;
   // blurring the focused field is what puts the iOS keyboard away
   if (s.contains(document.activeElement)) document.activeElement.blur();
-  const card = s.querySelector('.sheet'); card.style.transform = card.style.transition = ''; s.querySelector('.backdrop').style.opacity = '';
+  // The layer is pinned to the area above the keyboard, which grows back while the keyboard slides away. Slide out
+  // past the bottom of the whole screen instead, starting from exactly where the sheet is now and at its current size,
+  // so it doesn't stall above the old keyboard edge and then vanish when the viewport catches up.
+  const card = s.querySelector('.sheet'), from = card.getBoundingClientRect();
+  card.style.transition = 'none'; card.style.height = from.height + 'px'; card.style.maxHeight = 'none';
+  s.classList.add('closing'); card.style.transform = 'none';
+  card.style.transform = `translateY(${from.top - card.getBoundingClientRect().top}px)`;
+  card.getBoundingClientRect(); // commit that start position before animating from it
+  card.style.transform = card.style.transition = ''; s.querySelector('.backdrop').style.opacity = '';
   // while it animates out, hide the closing sheet from input and assistive tech, and free its ids for the next sheet
   s.inert = true; s.setAttribute('aria-hidden', 'true');
   s.querySelectorAll('[id]').forEach(e => e.removeAttribute('id'));
   s.classList.remove('open');
-  setTimeout(() => s.remove(), 320);
+  card.addEventListener('transitionend', e => { if (e.target === card) s.remove(); });
+  setTimeout(() => s.remove(), 500);
 }
 function sheet(content, label) {
   closeSheet();

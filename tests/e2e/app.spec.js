@@ -218,6 +218,28 @@ test('swiping the money sheet down dismisses it and the keyboard', async ({ page
   expect(await page.evaluate(() => document.activeElement?.tagName)).not.toBe('INPUT');
 });
 
+test('with the keyboard up, a dismissed sheet slides off the bottom of the screen', async ({ page }) => {
+  await page.goto('/');
+  await synced(page);
+  // stand in for the iOS keyboard: the visible area (what visualViewport reports) is 300px shorter than the screen
+  const screen = await page.evaluate(() => innerHeight);
+  await page.evaluate(h => document.documentElement.style.setProperty('--vv-h', h + 'px'), screen - 300);
+  await page.locator('#bAdd').click();
+  await page.waitForTimeout(400);
+  const height = await page.locator('.sheet-wrap.open .sheet').evaluate(s => s.offsetHeight);
+  await swipeDown(page, 120);
+  // part-way through the slide, before the viewport reports the keyboard has gone, the sheet must already be past the
+  // old keyboard edge, at its own size, rather than parked above the keyboard waiting to vanish
+  const mid = await page.evaluate(() => new Promise(r => setTimeout(() => {
+    const s = document.querySelector('.sheet-wrap .sheet');
+    r(s && { top: s.getBoundingClientRect().top, height: s.offsetHeight });
+  }, 220)));
+  expect(mid.top).toBeGreaterThan(screen - 300);
+  expect(mid.height).toBe(height);
+  await expect(page.locator('.sheet-wrap')).toHaveCount(0);
+  await page.evaluate(() => document.documentElement.style.removeProperty('--vv-h'));
+});
+
 test('no horizontal scrolling at iPhone width', async ({ page }) => {
   await page.goto('/');
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
