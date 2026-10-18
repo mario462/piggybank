@@ -74,6 +74,31 @@ test('create categories, add, move and withdraw', async ({ page }) => {
   expect(s.transactions[1].amount).toBe(30050);
 });
 
+test('opening on a new phone waits for the data instead of showing the welcome', async ({ page }) => {
+  await page.goto('/');
+  await page.evaluate(() => localStorage.clear());
+  await page.route('**/api/state', async r => { await new Promise(res => setTimeout(res, 1500)); await r.continue(); });
+  await page.reload();
+  await page.waitForTimeout(500);
+  await expect(page.locator('#emptyState')).toBeHidden();
+  await expect(page.locator('#overview')).toBeHidden();
+  await expect(page.locator('#sync')).toHaveText('Loading…');
+  await expect(page.locator('#bAdd')).toBeDisabled();
+  await expect(page.locator('#overview')).toBeVisible();
+  await expect(page.locator('#bAdd')).toBeEnabled();
+  await expect(page.locator('.cat')).toHaveCount(3);
+  await page.unroute('**/api/state');
+});
+test('with no copy on the phone and no connection, the welcome shows once the load fails', async ({ page }) => {
+  await page.goto('/');
+  await page.evaluate(() => localStorage.clear());
+  await page.route('**/api/state', r => r.abort());
+  await page.reload();
+  await expect(page.locator('#sync')).toHaveAttribute('data-s', 'offline');
+  await expect(page.locator('#emptyState')).toBeVisible();
+  await page.unroute('**/api/state');
+});
+
 test('data survives a reload with an empty cache (server is the source of truth)', async ({ page }) => {
   await page.goto('/');
   await page.evaluate(() => localStorage.clear());
