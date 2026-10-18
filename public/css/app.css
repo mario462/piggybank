@@ -107,6 +107,7 @@ button:focus-visible, input:focus-visible { outline: 2px solid var(--ink); outli
 /* sheets */
 .sheet-wrap { position: absolute; left: 0; right: 0; top: var(--vv-top, 0px); height: var(--vv-h, 100%); z-index: 50; pointer-events: none; }
 .sheet-wrap.open { pointer-events: auto; }
+.sheet-wrap.closing { top: 0; height: 100%; }
 .backdrop { position: absolute; inset: 0; background: var(--scrim); opacity: 0; transition: opacity .3s; }
 .sheet-wrap.open .backdrop { opacity: 1; }
 .sheet { position: absolute; left: 0; right: 0; bottom: 0; max-height: 90%; overflow: auto; overscroll-behavior: contain; background: var(--sheet);
