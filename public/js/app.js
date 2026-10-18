@@ -107,6 +107,9 @@ let openSheet = null;
 function closeSheet() {
   if (!openSheet) return;
   const s = openSheet; openSheet = null;
+  // while it animates out, hide the closing sheet from input and assistive tech, and free its ids for the next sheet
+  s.inert = true; s.setAttribute('aria-hidden', 'true');
+  s.querySelectorAll('[id]').forEach(e => e.removeAttribute('id'));
   s.classList.remove('open');
   setTimeout(() => s.remove(), 320);
 }

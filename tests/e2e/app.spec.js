@@ -7,9 +7,12 @@ const shot = (page, name) => page.screenshot({ path: `test-results/screens/${nam
 async function newCategory(page, name, goal) {
   await page.locator('#menuBtn').click();
   await page.getByRole('button', { name: /New category/ }).click();
-  await page.locator('#cname').fill(name);
-  await page.locator('#cgoal').fill(goal);
-  await page.locator('#csave').click();
+  // the previous category sheet may still be animating out, so scope to the open one
+  const sheet = page.getByRole('dialog', { name: 'New category' });
+  await sheet.locator('#cname').fill(name);
+  await sheet.locator('#cgoal').fill(goal);
+  await sheet.locator('#csave').click();
+  await expect(sheet).toBeHidden();
   await expect(page.locator('.cat', { hasText: name })).toBeVisible();
 }
 async function transaction(page, { type, amount, from, to, note }) {
