@@ -158,6 +158,37 @@ test('the API refuses writes without the app header and rejects bad input', asyn
   expect(r).toEqual({ noHeader: 403, negative: 422, unknownCat: 422, ok: 201, replay: 200 });
 });
 
+test('the money sheet opens with the amount focused, inside the tap', async ({ page }) => {
+  await page.goto('/');
+  await synced(page);
+  // iOS only shows the keyboard for a focus() made synchronously in the tap, so check focus right after the click, before any timer runs
+  const focused = await page.evaluate(() => { document.querySelector('#bAdd').click(); return document.activeElement?.id; });
+  expect(focused).toBe('amt');
+  await page.keyboard.press('Escape');
+  await page.locator('.cat', { hasText: 'Concert' }).click();
+  const detail = page.getByRole('dialog', { name: 'Concert' });
+  const fromDetail = await detail.evaluate(d => { [...d.querySelectorAll('button')].find(b => b.textContent === 'Withdraw').click(); return document.activeElement?.id; });
+  expect(fromDetail).toBe('amt');
+});
+
+test('long amounts are never clipped in the money sheet', async ({ page }) => {
+  await page.goto('/');
+  await page.locator('#bAdd').click();
+  const amt = page.locator('#amt');
+  for (const v of ['8', '1234.56', '123456789.99']) {
+    await amt.fill(v);
+    const m = await amt.evaluate(el => {
+      const r = el.getBoundingClientRect(), s = el.closest('.sheet').getBoundingClientRect();
+      const a = el.closest('.amount').getBoundingClientRect(), cur = el.parentNode.previousElementSibling.getBoundingClientRect();
+      return { fits: el.scrollWidth <= el.clientWidth + 1, inside: r.left >= s.left && r.right <= s.right,
+        centred: Math.abs((cur.left + r.right) / 2 - (a.left + a.right) / 2) < 30 };
+    });
+    expect(m, v).toEqual({ fits: true, inside: true, centred: true });
+    await shot(page, `07-amount-${v.length}`);
+  }
+  await page.keyboard.press('Escape');
+});
+
 test('no horizontal scrolling at iPhone width', async ({ page }) => {
   await page.goto('/');
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);

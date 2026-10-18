@@ -124,18 +124,28 @@ function sheet(content, label) {
   return wrap;
 }
 addEventListener('keydown', e => { if (e.key === 'Escape') closeSheet(); });
+// keep sheets above the iOS keyboard: pin the sheet layer to the part of the page that is actually visible
+if (window.visualViewport) {
+  const vv = visualViewport, fit = () => {
+    document.documentElement.style.setProperty('--vv-top', vv.pageTop + 'px');
+    document.documentElement.style.setProperty('--vv-h', vv.height + 'px');
+  };
+  vv.addEventListener('resize', fit); vv.addEventListener('scroll', fit); fit();
+}
 
 function openTx(type = 'add', o = {}) {
   if (!store.cats.length) return openCategory();
   const sel = { type, a: o.cat || null, b: o.to || null };
-  const amt = h('input', { id: 'amt', inputmode: 'decimal', autocomplete: 'off', placeholder: '0', 'aria-label': 'Amount' });
+  const amt = h('input', { id: 'amt', inputmode: 'decimal', autocomplete: 'off', placeholder: '0', maxlength: '12', size: '1', 'aria-label': 'Amount' });
+  const field = h('span', { class: 'amount-field' }, amt);
   const note = h('input', { id: 'note', class: 'field', placeholder: 'Note (optional)', autocomplete: 'off', maxlength: '200' });
   const seg = h('div', { class: 'seg', role: 'tablist' });
   const labA = h('div', { class: 'flabel' }), labB = h('div', { class: 'flabel' }, 'To');
   const rowA = h('div', { class: 'chips' }), rowB = h('div', { class: 'chips' });
   const hint = h('div', { class: 'hint' });
   const go = h('button', { class: 'go', id: 'go', onclick: submit });
-  const size = () => { amt.style.width = Math.max(1, amt.value.length) + 0.6 + 'ch'; };
+  // the input sizes to a hidden copy of its text (see .amount-field), so it never clips; long amounts shrink the type
+  const size = () => { field.dataset.v = amt.value || amt.placeholder; field.parentNode?.style.setProperty('--len', Math.max(7, amt.value.length)); };
   const quick = h('div', { class: 'quick' }, [10, 25, 50, 100].map(v => h('button', {
     onclick: () => { amt.value = String((parseAmount(amt.value) + v * 100) / 100); size(); update(); },
   }, '+' + v)));
@@ -176,9 +186,11 @@ function openTx(type = 'add', o = {}) {
   }
   amt.addEventListener('input', () => { size(); update(); });
   amt.addEventListener('keydown', e => { if (e.key === 'Enter') submit(); });
-  sheet(h('div', { class: 'form' }, seg, h('div', { class: 'amount' }, h('span', {}, '$'), amt), quick, labA, rowA, labB, rowB, note, hint, go), 'New transaction');
-  update();
-  setTimeout(() => amt.focus({ preventScroll: true }), 350);
+  sheet(h('div', { class: 'form' }, seg, h('div', { class: 'amount' }, h('span', {}, '$'), field), quick, labA, rowA, labB, rowB, note, hint, go), 'New transaction');
+  size(); update();
+  // focus now, inside the tap that opened the sheet: iOS only raises the keyboard for a focus() made synchronously in a user gesture
+  amt.focus({ preventScroll: true });
+  amt.select();
 }
 function describe(t) {
   const a = store.cat(t.cat), b = t.to && store.cat(t.to);
