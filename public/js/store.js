@@ -86,6 +86,8 @@ export function createStore({ request = api } = {}) {
     if (flushing) return flushing;
     flushing = (async () => {
       setStatus('syncing');
+      // a refresh that brings nothing new must not redraw the screen (it would shut a row swiped open, for one)
+      const sent = s.outbox.length, before = JSON.stringify([s.cats, s.txs]), wasLoaded = s.loaded;
       let rejected = null;
       try {
         while (s.outbox.length) {
@@ -104,7 +106,7 @@ export function createStore({ request = api } = {}) {
         s.cats = next.cats; s.txs = sortTxs(next.txs); s.loaded = true;
         persist();
         setStatus('synced');
-        emit({ type: 'sync' });
+        if (sent || !wasLoaded || JSON.stringify([s.cats, s.txs]) !== before) emit({ type: 'sync' });
         if (rejected) emit({ type: 'error', message: rejected });
       } catch (e) {
         setStatus(e.kind || 'offline', e.message);

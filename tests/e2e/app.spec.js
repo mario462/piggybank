@@ -298,6 +298,26 @@ test('swiping a category left reveals Mark done; a category below zero must be t
   await expect(full).toBeHidden();
 });
 
+test('a row swiped open stays open through a background sync, on the overview and in the menu', async ({ page }) => {
+  await page.goto('/');
+  await synced(page);
+  const open = 'matrix(1, 0, 0, 1, -104, 0)';
+  const row = page.locator('#cats .cat', { hasText: 'Japan trip' });
+  await swipeLeft(page, row);
+  await page.evaluate(() => window.piggy.store.flush());
+  await synced(page);
+  expect(await row.evaluate(r => getComputedStyle(r).transform)).toBe(open);
+  await row.click(); // a tap shuts it
+  await page.locator('#menuBtn').click();
+  await page.waitForTimeout(400);
+  const arch = page.getByRole('navigation', { name: 'Menu' }).locator('.cat.arch').first();
+  await swipeLeft(page, arch);
+  await page.evaluate(() => window.piggy.store.flush());
+  await synced(page);
+  expect(await arch.evaluate(r => getComputedStyle(r).transform)).toBe(open);
+  await page.keyboard.press('Escape');
+});
+
 test('archived categories are listed in the menu and can be restored', async ({ page }) => {
   await page.goto('/');
   await synced(page);
