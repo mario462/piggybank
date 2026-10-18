@@ -24,7 +24,8 @@ button { cursor: pointer; }
 [hidden] { display: none !important; }
 button:focus-visible, input:focus-visible { outline: 2px solid var(--ink); outline-offset: 2px; }
 
-.app { position: relative; height: 100%; max-width: 480px; margin: 0 auto; overflow: hidden; padding-top: env(safe-area-inset-top, 0px); }
+/* clip, not just hidden: an overflow: hidden box can still be scrolled by script or by focus, which shifts every screen */
+.app { position: relative; height: 100%; max-width: 480px; margin: 0 auto; overflow: hidden; overflow: clip; padding-top: env(safe-area-inset-top, 0px); }
 .view { position: absolute; inset: env(safe-area-inset-top, 0px) 0 0; overflow-y: auto; overflow-x: hidden;
   padding: 10px var(--gutter-r) calc(120px + env(safe-area-inset-bottom, 0px)) var(--gutter-l);
   transition: transform .35s cubic-bezier(.2, .9, .3, 1), opacity .35s; }

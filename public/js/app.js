@@ -185,6 +185,15 @@ if (window.visualViewport) {
   vv.addEventListener('resize', fit); vv.addEventListener('scroll', fit); fit();
 }
 
+// Scroll a chip row sideways so its picked chip shows. Not scrollIntoView(): that also scrolls every ancestor, and while
+// a sheet is still below the screen it would scroll the whole app up to reach the chip, then drop back down with a jump.
+function reveal(row, chip) {
+  if (!chip) return;
+  const r = row.getBoundingClientRect(), c = chip.getBoundingClientRect();
+  if (c.right > r.right) row.scrollLeft += c.right - r.right;
+  else if (c.left < r.left) row.scrollLeft -= r.left - c.left;
+}
+
 function openTx(type = 'add', o = {}) {
   if (!active().length) return openCategory();
   const sel = { type, a: o.cat || null, b: o.to || null };
@@ -209,7 +218,7 @@ function openTx(type = 'add', o = {}) {
       class: 'chip' + (sel[key] === c.id ? ' on' : '') + (other === c.id ? ' dim' : ''), style: `--c:${c.color}`,
       onclick: () => { sel[key] = c.id; if (key === 'a' && sel.b === c.id) sel.b = null; update(); },
     }, h('i', { class: 'dot' }), h('span', { class: 'chip-t' }, h('b', {}, c.name), h('small', {}, fmt(b[c.id], { whole: true }))))));
-    row.querySelector('.on')?.scrollIntoView({ inline: 'nearest', block: 'nearest' });
+    reveal(row, row.querySelector('.on'));
   }
   function update() {
     seg.replaceChildren(...[['add', 'Add'], ['withdraw', 'Withdraw'], ['transfer', 'Move']].map(([k, l]) =>
