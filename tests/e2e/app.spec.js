@@ -105,6 +105,29 @@ test('category detail shows balance, goal and its own history', async ({ page })
   await shot(page, '04-detail');
 });
 
+test('opening the money sheet from a category keeps the screen still and shows the picked category', async ({ page }) => {
+  await page.goto('/');
+  await page.locator('.cat', { hasText: 'Concert' }).click();
+  const d = page.getByRole('dialog', { name: 'Concert' });
+  await page.waitForTimeout(400);
+  // the app itself must never scroll: watch its offset on every frame while the detail sheet hands over to the money sheet
+  const offsets = await d.evaluate(d => new Promise(done => {
+    const app = document.querySelector('.app'), seen = new Set(), t0 = performance.now();
+    [...d.querySelectorAll('button')].find(b => b.textContent === 'Withdraw').click();
+    const frame = () => { seen.add(app.scrollTop); if (performance.now() - t0 < 700) requestAnimationFrame(frame); else done([...seen]); };
+    frame();
+  }));
+  expect(offsets).toEqual([0]);
+  // the picked chip is scrolled into view within its own row
+  const sheet = page.getByRole('dialog', { name: 'New transaction' });
+  const inRow = await sheet.locator('.chip.on').evaluate(c => {
+    const a = c.getBoundingClientRect(), r = c.parentNode.getBoundingClientRect();
+    return a.left >= r.left - 1 && a.right <= r.right + 1;
+  });
+  expect(inRow).toBe(true);
+  await page.keyboard.press('Escape');
+});
+
 test('edit a category goal', async ({ page }) => {
   await page.goto('/');
   await page.locator('.cat', { hasText: 'Concert' }).click();
