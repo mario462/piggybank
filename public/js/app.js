@@ -33,12 +33,19 @@ function money(el, c) {
   const s = fmt(c), i = s.lastIndexOf('.');
   el.replaceChildren(s.slice(0, i), h('small', {}, s.slice(i)));
 }
-function countUp(el, from, to) {
-  if (reduced || from === to) return money(el, to);
+// The balance counts to each new total from whatever it shows right now. A newer count stops the one in flight, so two
+// never take turns writing the number (a sync landing mid-count flashed the end value; an undo jumped to it first).
+let counting = 0, showing = null;
+function countUp(el, to) {
+  const run = ++counting, from = showing ?? to;
+  const show = v => { showing = v; money(el, v); };
+  if (reduced || from === to) return show(to);
   const t0 = performance.now();
   const step = now => {
-    const k = Math.min(1, (now - t0) / 700), e = 1 - Math.pow(1 - k, 3);
-    money(el, Math.round(from + (to - from) * e));
+    if (run !== counting) return;
+    // a frame's timestamp can be a little before t0, which would start the count by stepping backwards
+    const k = Math.min(1, Math.max(0, (now - t0) / 700)), e = 1 - Math.pow(1 - k, 3);
+    show(Math.round(from + (to - from) * e));
     if (k < 1) requestAnimationFrame(step);
   };
   requestAnimationFrame(step);
@@ -557,7 +564,7 @@ function renderSync() {
 }
 const brand = () => $('#home .brand').cloneNode(true);
 
-let shown = null, histFilter = 'all';
+let histFilter = 'all';
 function render() {
   const b = balances(store.cats, store.txs), tot = total(b);
   const empty = store.cats.length === 0;
@@ -567,8 +574,7 @@ function render() {
 
   const el = $('#total');
   el.classList.toggle('neg', tot < 0);
-  if (shown == null) money(el, tot); else countUp(el, shown, tot);
-  shown = tot;
+  countUp(el, tot);
   const wk = netSince(store.txs, Date.now() - 7 * DAY), owe = borrowed(b);
   $('#meta').replaceChildren(h('span', { class: wk >= 0 ? 'up' : 'down' }, `${fmt(wk, { sign: true })} this week`),
     owe ? h('span', {}, `${fmt(owe)} borrowed`) : '', h('span', {}, `${active().length} ${active().length === 1 ? 'category' : 'categories'}`));
