@@ -1,6 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { balances, total, borrowed, series, netSince, fmt, parseAmount, sortTxs, dropCategory } from '../../public/js/ledger.js';
+import { balances, total, borrowed, series, netSince, fmt, parseAmount, sortTxs, dropCategory, MAX_CENTS } from '../../public/js/ledger.js';
+import { validateTransaction } from '../../server/validate.js';
 
 const cats = [{ id: 'a' }, { id: 'b' }];
 const txs = [
@@ -79,4 +80,10 @@ test('deleting a category keeps the money it moved with the other categories', (
     ['5', 'add', 'b', undefined, undefined],
   ]);
   assert.equal(balances(r.cats, r.txs).b, before);
+});
+
+test('the app caps amounts exactly where the server does', () => {
+  const tx = amount => () => validateTransaction({ id: 'tx00000001', type: 'add', cat: 'cat0000001', amount });
+  assert.doesNotThrow(tx(MAX_CENTS));
+  assert.throws(tx(MAX_CENTS + 1));
 });

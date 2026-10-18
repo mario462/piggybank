@@ -297,6 +297,26 @@ test('long amounts are never clipped in the money sheet', async ({ page }) => {
   await page.keyboard.press('Escape');
 });
 
+test('amounts and goals above what the server accepts cannot be saved', async ({ page }) => {
+  await page.goto('/');
+  await page.locator('#bAdd').click();
+  await page.locator('.sheet-wrap.open .chip', { hasText: 'Concert' }).click();
+  await page.locator('#amt').fill('999999999999');
+  await expect(page.locator('#go')).toBeDisabled();
+  await expect(page.locator('#go')).toHaveText('Amount too large');
+  await expect(page.locator('.sheet-wrap.open .hint')).toHaveText('One entry can be at most $100,000,000.');
+  await page.locator('#amt').fill('100000000');
+  await expect(page.locator('#go')).toBeEnabled();
+  await page.keyboard.press('Escape');
+  await page.locator('.cat', { hasText: 'Concert' }).click();
+  await page.getByRole('button', { name: 'Edit' }).click();
+  await page.locator('#cgoal').fill('100000000.01');
+  await expect(page.locator('#csave')).toBeDisabled();
+  await page.locator('#cgoal').fill('200');
+  await expect(page.locator('#csave')).toHaveText('Save');
+  await page.keyboard.press('Escape');
+});
+
 // a real finger drag down from the top of the open sheet, through the browser's touch input
 async function swipeDown(page, distance) {
   const box = await page.locator('.sheet-wrap.open .grab').boundingBox();
