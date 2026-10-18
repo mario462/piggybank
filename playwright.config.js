@@ -5,7 +5,8 @@ import { defineConfig, devices } from '@playwright/test';
 export default defineConfig({
   testDir: 'tests/e2e',
   workers: 1,
-  retries: process.env.CI ? 1 : 0,
+  // no retries: the tests are serial and share one database, so a retry would start from dirty data
+  retries: 0,
   reporter: process.env.CI ? [['list'], ['html', { open: 'never' }]] : 'list',
   use: {
     baseURL: 'http://localhost:8788',

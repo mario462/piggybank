@@ -10,7 +10,9 @@ One-time setup, all on Cloudflare's free plans. About 15 minutes. You only need 
 
 ## 2. Create the Pages project
 
-1. Go to **Workers & Pages → Create → Pages → Connect to Git**.
+1. Go to **Workers & Pages → Create** and choose **Pages → Connect to Git**. The create screen opens on Workers by default;
+   Pages is behind the "Looking to deploy Pages? Get started" link at the bottom. Don't import the repo as a Worker:
+   this project is built for Pages, and a Worker build fails (it shows up as a red "Workers Builds" check on GitHub).
 2. Authorise GitHub and pick **mario462/piggybank**.
 3. Build settings:
    - Production branch: `main`
