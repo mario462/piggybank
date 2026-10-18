@@ -1,0 +1,17 @@
+{
+  "name": "piggybank",
+  "private": true,
+  "type": "module",
+  "description": "Personal savings PWA (Piggy Ledger) on Cloudflare Pages + D1, protected by Cloudflare Access.",
+  "scripts": {
+    "dev": "wrangler pages dev public --port 8788 --d1 DB --compatibility-date 2024-11-01 --binding DEV_NO_AUTH=1",
+    "test": "npm run test:unit && npm run test:e2e",
+    "test:unit": "node --test tests/unit/*.test.js",
+    "test:e2e": "playwright test",
+    "icons": "node scripts/icons.js"
+  },
+  "devDependencies": {
+    "@playwright/test": "1.56.0",
+    "wrangler": "3.114.0"
+  }
+}
