@@ -59,6 +59,7 @@ export async function handle(request, env, deps = {}) {
     if (m && method === 'DELETE') {
       const r = await store.deleteCategory(db, validId(m[1]));
       if (r === 'in-use') return error(409, 'category has transactions');
+      if (r === 'not-empty') return error(409, 'category still holds money');
       return r === 'deleted' ? json({ ok: true }) : error(404, 'category not found');
     }
 

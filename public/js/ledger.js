@@ -22,6 +22,19 @@ export function balances(cats, txs) {
   return b;
 }
 
+// Remove a category and its history. Moves between it and other categories become deposits to or withdrawals
+// from those categories, so their balances stay the same. Mirrors deleteCategory() in server/db.js.
+export function dropCategory(cats, txs, id) {
+  const name = cats.find(c => c.id === id)?.name ?? 'a deleted category';
+  const tag = (note, s) => (note ? `${note} · ${s.toLowerCase()} ${name}` : `${s} ${name}`).slice(0, 200);
+  return {
+    cats: cats.filter(c => c.id !== id),
+    txs: txs.flatMap(t => t.type === 'transfer' && t.cat === id ? [{ ...t, type: 'add', cat: t.to, to: null, note: tag(t.note, 'From') }]
+      : t.type === 'transfer' && t.to === id ? [{ ...t, type: 'withdraw', to: null, note: tag(t.note, 'To') }]
+      : t.cat === id ? [] : [t]),
+  };
+}
+
 export const total = b => Object.values(b).reduce((a, v) => a + v, 0);
 export const borrowed = b => Object.values(b).reduce((a, v) => a + Math.min(0, v), 0);
 

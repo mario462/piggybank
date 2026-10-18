@@ -41,3 +41,11 @@ test('categories: full and partial', () => {
   assert.throws(() => validateCategory({}, { partial: true }), ValidationError);
   assert.throws(() => validateCategory({ name: 'x'.repeat(61) }, { partial: true }), ValidationError);
 });
+test('categories: archiving takes a timestamp or null, and only as an update', () => {
+  assert.deepEqual(validateCategory({ archived: now - 1000 }, { partial: true }, now), { archived: now - 1000 });
+  assert.deepEqual(validateCategory({ archived: null }, { partial: true }, now), { archived: null });
+  for (const archived of ['yes', true, 1000, now + 3 * 864e5, 1.5]) {
+    assert.throws(() => validateCategory({ archived }, { partial: true }, now), ValidationError, String(archived));
+  }
+  assert.equal('archived' in validateCategory({ id: 'cat0000001', name: 'x', color: '#7C9CFF', goal: 1, archived: now }), false);
+});

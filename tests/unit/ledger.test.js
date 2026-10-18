@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { balances, total, borrowed, series, netSince, fmt, parseAmount, sortTxs } from '../../public/js/ledger.js';
+import { balances, total, borrowed, series, netSince, fmt, parseAmount, sortTxs, dropCategory } from '../../public/js/ledger.js';
 
 const cats = [{ id: 'a' }, { id: 'b' }];
 const txs = [
@@ -48,4 +48,24 @@ test('parseAmount is exact and rejects junk', () => {
   assert.equal(parseAmount('abc'), 0);
   assert.equal(parseAmount('-5'), 0);
   assert.equal(parseAmount(''), 0);
+});
+
+test('deleting a category keeps the money it moved with the other categories', () => {
+  const cs = [{ id: 'a', name: 'Japan trip' }, { id: 'b', name: 'Savings' }];
+  const ts = [
+    { id: '1', t: 1, type: 'add', cat: 'a', amount: 10000 },
+    { id: '2', t: 2, type: 'transfer', cat: 'b', to: 'a', amount: 500, note: '' },
+    { id: '3', t: 3, type: 'transfer', cat: 'a', to: 'b', amount: 2000, note: 'Leftover' },
+    { id: '4', t: 4, type: 'withdraw', cat: 'a', amount: 8500, note: 'Goal done' },
+    { id: '5', t: 5, type: 'add', cat: 'b', amount: 100 },
+  ];
+  const before = balances(cs, ts).b;
+  const r = dropCategory(cs, ts, 'a');
+  assert.deepEqual(r.cats, [{ id: 'b', name: 'Savings' }]);
+  assert.deepEqual(r.txs.map(t => [t.id, t.type, t.cat, t.to, t.note]), [
+    ['2', 'withdraw', 'b', null, 'To Japan trip'],
+    ['3', 'add', 'b', null, 'Leftover · from Japan trip'],
+    ['5', 'add', 'b', undefined, undefined],
+  ]);
+  assert.equal(balances(r.cats, r.txs).b, before);
 });

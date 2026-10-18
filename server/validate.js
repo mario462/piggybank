@@ -51,7 +51,7 @@ export function validateTransaction(body, now = Date.now()) {
   return tx;
 }
 
-export function validateCategory(body, { partial = false } = {}) {
+export function validateCategory(body, { partial = false } = {}, now = Date.now()) {
   if (!isObj(body)) fail('body must be an object');
   const out = {};
   if (!partial) out.id = validId(body.id);
@@ -61,6 +61,12 @@ export function validateCategory(body, { partial = false } = {}) {
     out.color = body.color.toLowerCase();
   }
   if (!partial || 'goal' in body) out.goal = cents(body.goal, 'goal', { min: 0 });
+  // when the category was archived (a finished goal), or null to bring it back; only set by an update
+  if (partial && 'archived' in body) {
+    const a = body.archived;
+    if (a !== null && (!Number.isSafeInteger(a) || a < EARLIEST || a > now + 864e5)) fail('archived must be a timestamp in milliseconds or null');
+    out.archived = a;
+  }
   if (partial && !Object.keys(out).length) fail('nothing to update');
   return out;
 }

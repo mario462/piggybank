@@ -240,6 +240,120 @@ test('with the keyboard up, a dismissed sheet slides off the bottom of the scree
   await page.evaluate(() => document.documentElement.style.removeProperty('--vv-h'));
 });
 
+// a real finger drag left across a row, through the browser's touch input
+async function swipeLeft(page, row, distance = 160) {
+  const box = await row.boundingBox();
+  const x = box.x + box.width - 40, y = box.y + box.height / 2;
+  const cdp = await page.context().newCDPSession(page);
+  const touch = (type, dx) => cdp.send('Input.dispatchTouchEvent', { type, touchPoints: type === 'touchEnd' ? [] : [{ x: x - dx, y }] });
+  await touch('touchStart', 0);
+  for (let i = 1; i <= 10; i++) { await touch('touchMove', distance * i / 10); await page.waitForTimeout(16); }
+  await touch('touchEnd', distance);
+  await cdp.detach();
+  await page.waitForTimeout(350); // let it settle open
+}
+const balanceOf = (s, id) => s.transactions.reduce((a, t) =>
+  a + (t.to === id ? t.amount : t.cat === id ? (t.type === 'add' ? t.amount : -t.amount) : 0), 0);
+
+test('a reached goal can be marked done: leftover moves, the rest is withdrawn, the category is archived', async ({ page }) => {
+  await page.goto('/');
+  await synced(page);
+  await transaction(page, { type: 'Add', amount: '160', from: 'Nintendo' });
+  const row = page.locator('#cats .cat', { hasText: 'Nintendo' });
+  await expect(row).toContainText('Goal reached · $11 over');
+  const japanBefore = balanceOf(await serverState(page), (await serverState(page)).categories.find(c => c.name === 'Japan trip').id);
+  await row.getByRole('button', { name: 'Mark done' }).click();
+  const full = page.getByRole('dialog', { name: 'Close out Nintendo Switch 2' });
+  await expect(full).toBeVisible();
+  await full.getByRole('button', { name: /The goal amount/ }).click();
+  await expect(full).toContainText('The other $10.50 goes to');
+  await full.locator('.chip', { hasText: 'Japan trip' }).click();
+  await page.waitForTimeout(400);
+  await shot(page, '08-close-out');
+  await expect(page.locator('#closeGo')).toHaveText('Withdraw $450.00 and archive');
+  await page.locator('#closeGo').click();
+  await expect(full).toBeHidden();
+  await expect(page.locator('.toast')).toContainText('Nintendo Switch 2 archived');
+  await expect(page.locator('#cats .cat', { hasText: 'Nintendo' })).toHaveCount(0);
+  await expect(page.locator('#meta')).toContainText('2 categories');
+  await synced(page);
+  const s = await serverState(page);
+  const n = s.categories.find(c => c.name === 'Nintendo Switch 2'), j = s.categories.find(c => c.name === 'Japan trip');
+  expect(n.archived).toBeGreaterThan(0);
+  expect(balanceOf(s, n.id)).toBe(0);
+  expect(balanceOf(s, j.id)).toBe(japanBefore + 1050);
+  expect(s.transactions.slice(-2).map(t => [t.type, t.amount, t.note])).toEqual([['transfer', 1050, 'Leftover'], ['withdraw', 45000, 'Goal done']]);
+});
+
+test('swiping a category left reveals Mark done; a category below zero must be topped up first', async ({ page }) => {
+  await page.goto('/');
+  const row = page.locator('#cats .cat', { hasText: 'Concert' });
+  await swipeLeft(page, row);
+  expect(await row.evaluate(r => getComputedStyle(r).transform)).toBe('matrix(1, 0, 0, 1, -104, 0)');
+  await shot(page, '09-swiped');
+  await page.locator('#cats .swipe', { hasText: 'Concert' }).getByRole('button', { name: 'Mark done' }).click();
+  const full = page.getByRole('dialog', { name: 'Close out Concert' });
+  await expect(full).toContainText('Concert is at −$60.00');
+  await full.getByRole('button', { name: 'Cancel' }).click();
+  await expect(full).toBeHidden();
+});
+
+test('archived categories are listed in the menu and can be restored', async ({ page }) => {
+  await page.goto('/');
+  await synced(page);
+  await page.locator('#menuBtn').click();
+  const menu = page.getByRole('navigation', { name: 'Menu' });
+  await expect(menu.locator('.cat.arch')).toHaveCount(1);
+  await expect(menu.locator('.cat.arch')).toContainText('Nintendo Switch 2');
+  await page.waitForTimeout(400);
+  await shot(page, '10-menu');
+  await menu.locator('.cat.arch').click();
+  const d = page.getByRole('dialog', { name: 'Nintendo Switch 2' });
+  await expect(d.locator('.total')).toHaveText('$450.00');
+  await d.getByRole('button', { name: 'Restore' }).click();
+  await expect(page.locator('#cats .cat', { hasText: 'Nintendo' })).toContainText('$0.00');
+  await synced(page);
+  expect((await serverState(page)).categories.find(c => c.name === 'Nintendo Switch 2').archived).toBeNull();
+  // an empty category archives without withdrawing anything
+  await page.locator('#cats .cat', { hasText: 'Nintendo' }).click();
+  await page.getByRole('dialog', { name: 'Nintendo Switch 2' }).getByRole('button', { name: 'Mark goal done' }).click();
+  await page.locator('#closeGo').click();
+  await expect(page.locator('#cats .cat', { hasText: 'Nintendo' })).toHaveCount(0);
+});
+
+test('an archived category is deleted with a swipe and a confirmation, keeping other balances', async ({ page }) => {
+  await page.goto('/');
+  await synced(page);
+  const before = await serverState(page), japan = before.categories.find(c => c.name === 'Japan trip').id;
+  await page.locator('#menuBtn').click();
+  const menu = page.getByRole('navigation', { name: 'Menu' });
+  await page.waitForTimeout(400);
+  const row = menu.locator('.cat.arch', { hasText: 'Nintendo' });
+  await swipeLeft(page, row);
+  await menu.getByRole('button', { name: 'Delete' }).click();
+  const confirm = page.getByRole('dialog', { name: 'Delete category' });
+  await expect(confirm).toContainText('Delete Nintendo Switch 2?');
+  await expect(confirm).toContainText('Money it moved to or from other categories stays with them.');
+  await page.waitForTimeout(400);
+  await shot(page, '11-confirm-delete');
+  // cancelling keeps it
+  await confirm.getByRole('button', { name: 'Cancel' }).click();
+  await expect(menu.locator('.cat.arch', { hasText: 'Nintendo' })).toHaveCount(1);
+  await swipeLeft(page, row);
+  await menu.getByRole('button', { name: 'Delete' }).click();
+  await page.locator('#confirmDelete').click();
+  await expect(menu.locator('.cat.arch')).toHaveCount(0);
+  await synced(page);
+  const s = await serverState(page);
+  expect(s.categories.map(c => c.name)).toEqual(['Japan trip', 'Concert']);
+  expect(balanceOf(s, japan)).toBe(balanceOf(before, japan));
+  expect(s.transactions.find(t => t.note === 'To Nintendo Switch 2')).toMatchObject({ type: 'withdraw', cat: japan, amount: 30050, to: null });
+  expect(s.transactions.find(t => t.note === 'Leftover · from Nintendo Switch 2')).toMatchObject({ type: 'add', cat: japan, amount: 1050 });
+  const total = s.transactions.reduce((a, t) => a + (t.type === 'add' ? t.amount : t.type === 'withdraw' ? -t.amount : 0), 0);
+  await expect(page.locator('#total')).toHaveText(fmtCents(total));
+});
+const fmtCents = c => (c < 0 ? '−' : '') + '$' + (Math.abs(c) / 100).toLocaleString('en-US', { minimumFractionDigits: 2 });
+
 test('no horizontal scrolling at iPhone width', async ({ page }) => {
   await page.goto('/');
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
