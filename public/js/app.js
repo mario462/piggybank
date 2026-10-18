@@ -1,4 +1,4 @@
-import { balances, total, borrowed, series, netSince, fmt, parseAmount } from './ledger.js';
+import { balances, total, borrowed, series, netSince, fmt, parseAmount, MAX_CENTS } from './ledger.js';
 import { createStore } from './store.js';
 
 const COLORS = ['#7C9CFF', '#5EC4B6', '#B79CFF', '#E0A458', '#E57A7A', '#D98BB5', '#8FBF7F', '#6FB7D9'];
@@ -220,14 +220,18 @@ function openTx(type = 'add', o = {}) {
     if (sel.type === 'transfer') chips(rowB, 'b', sel.a);
     const c = cents(), A = sel.a && store.cat(sel.a), B = sel.b && store.cat(sel.b), b = balances(store.cats, store.txs);
     hint.textContent = ''; hint.className = 'hint';
-    if (A && c && sel.type !== 'add' && b[A.id] - c < 0) {
+    // the server refuses more than this, so the change would show for a moment and then vanish with an error
+    const tooBig = c > MAX_CENTS;
+    if (tooBig) {
+      hint.textContent = `One entry can be at most ${fmt(MAX_CENTS, { whole: true })}.`; hint.className = 'hint warn';
+    } else if (A && c && sel.type !== 'add' && b[A.id] - c < 0) {
       hint.textContent = `${A.name} will be at ${fmt(b[A.id] - c)}, borrowed from yourself.`; hint.className = 'hint warn';
     } else if (A && c && sel.type === 'add' && A.goal && b[A.id] < A.goal && b[A.id] + c >= A.goal) {
       hint.textContent = `This reaches the ${fmt(A.goal, { whole: true })} goal.`; hint.className = 'hint good';
     }
-    const ok = c > 0 && A && (sel.type !== 'transfer' || (B && B.id !== A.id));
+    const ok = c > 0 && !tooBig && A && (sel.type !== 'transfer' || (B && B.id !== A.id));
     go.disabled = !ok;
-    go.textContent = !c ? 'Enter an amount' : !A ? 'Pick a category' : sel.type === 'transfer' && !B ? 'Pick where it goes'
+    go.textContent = !c ? 'Enter an amount' : tooBig ? 'Amount too large' : !A ? 'Pick a category' : sel.type === 'transfer' && !B ? 'Pick where it goes'
       : sel.type === 'add' ? `Add ${fmt(c)} to ${A.name}` : sel.type === 'withdraw' ? `Withdraw ${fmt(c)} from ${A.name}` : `Move ${fmt(c)} to ${B.name}`;
   }
   function submit() {
@@ -257,15 +261,18 @@ function openCategory(id) {
   const name = h('input', { id: 'cname', class: 'field', placeholder: 'What are you saving for?', autocomplete: 'off', maxlength: '60', value: existing?.name || '' });
   const goal = h('input', { id: 'cgoal', class: 'field', inputmode: 'decimal', placeholder: 'Goal, e.g. 450', autocomplete: 'off', value: existing?.goal ? String(existing.goal / 100) : '' });
   const swatches = h('div', { class: 'swatches' });
-  const go = h('button', { class: 'go', id: 'csave' }, existing ? 'Save' : 'Create category');
+  const go = h('button', { class: 'go', id: 'csave' });
   const draw = () => {
     swatches.replaceChildren(...COLORS.map(c => h('button', { class: 'sw' + (c === color ? ' on' : ''), style: `--c:${c}`, 'aria-label': 'Colour ' + c, onclick: () => { color = c; draw(); } })));
-    go.disabled = !name.value.trim();
+    const tooBig = parseAmount(goal.value) > MAX_CENTS;
+    go.disabled = !name.value.trim() || tooBig;
+    go.textContent = tooBig ? `Goal can be at most ${fmt(MAX_CENTS, { whole: true })}` : existing ? 'Save' : 'Create category';
   };
   name.addEventListener('input', draw);
+  goal.addEventListener('input', draw);
   go.addEventListener('click', () => {
     const fields = { name: name.value.trim().slice(0, 60), color, goal: parseAmount(goal.value) };
-    if (!fields.name) return;
+    if (go.disabled) return;
     if (existing) store.updateCategory(id, fields); else store.addCategory(fields);
     closeSheet();
   });

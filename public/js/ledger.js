@@ -2,6 +2,8 @@
 // Money is always integer cents. Balances are derived by replaying transactions.
 
 export const TYPES = ['add', 'withdraw', 'transfer'];
+// the largest amount or goal the server accepts (MAX_CENTS in server/validate.js): $100M
+export const MAX_CENTS = 10_000_000_000;
 
 export function sortTxs(txs) {
   return txs.slice().sort((a, b) => a.t - b.t || (a.seq ?? 0) - (b.seq ?? 0) || (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
