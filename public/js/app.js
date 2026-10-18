@@ -222,13 +222,13 @@ function openTx(type = 'add', o = {}) {
     labA.hidden = rowA.hidden = lone;
     labB.hidden = rowB.hidden = sel.type !== 'transfer' || lone;
     if (sel.type === 'transfer') chips(rowB, 'b', sel.a);
-    const c = cents(), A = sel.a && store.cat(sel.a), B = sel.b && store.cat(sel.b), b = balances(store.cats, store.txs);
-    hint.textContent = ''; hint.className = 'hint';
     if (lone) {
-      hint.textContent = 'Moving money needs a second category to move it to.';
+      hint.textContent = 'Moving money needs a second category to move it to.'; hint.className = 'hint';
       go.disabled = false; go.textContent = 'Create another category';
       return;
     }
+    const c = cents(), A = sel.a && store.cat(sel.a), B = sel.b && store.cat(sel.b), b = balances(store.cats, store.txs);
+    hint.textContent = ''; hint.className = 'hint';
     if (A && c && sel.type !== 'add' && b[A.id] - c < 0) {
       hint.textContent = `${A.name} will be at ${fmt(b[A.id] - c)}, borrowed from yourself.`; hint.className = 'hint warn';
     } else if (A && c && sel.type === 'add' && A.goal && b[A.id] < A.goal && b[A.id] + c >= A.goal) {
