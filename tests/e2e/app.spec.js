@@ -15,11 +15,18 @@ async function newCategory(page, name, goal) {
   await expect(sheet).toBeHidden();
   await expect(page.locator('.cat', { hasText: name })).toBeVisible();
 }
+// tap an amount out on the money sheet's keypad, after clearing what's there (holding delete clears it)
+async function typeAmount(page, v) {
+  const pad = page.locator('.sheet-wrap.open .keypad');
+  const del = pad.getByRole('button', { name: 'Delete' });
+  await del.dispatchEvent('pointerdown'); await page.waitForTimeout(550); await del.dispatchEvent('pointerup');
+  for (const k of String(v)) await pad.getByRole('button', { name: k === '.' ? 'Decimal point' : k, exact: true }).click();
+}
 async function transaction(page, { type, amount, from, to, note }) {
   await page.locator('#bAdd').click();
   const sheet = page.getByRole('dialog', { name: 'New transaction' });
   await sheet.getByRole('tab', { name: type }).click();
-  await page.locator('#amt').fill(String(amount));
+  await typeAmount(page, amount);
   await sheet.locator('.chips').nth(0).locator('.chip', { hasText: from }).click();
   if (to) await sheet.locator('.chips').nth(1).locator('.chip', { hasText: to }).click();
   if (note) await page.locator('#note').fill(note);
@@ -53,7 +60,7 @@ test('create categories, add, move and withdraw', async ({ page }) => {
   // withdrawing more than a category holds is allowed (borrowing from yourself)
   await page.locator('#bAdd').click();
   await page.getByRole('tab', { name: 'Withdraw' }).click();
-  await page.locator('#amt').fill('100');
+  await typeAmount(page, '100');
   await page.locator('.chips').nth(0).locator('.chip', { hasText: 'Concert' }).click();
   await expect(page.locator('.hint')).toContainText('−$60.00');
   await shot(page, '02-withdraw-sheet');
@@ -257,23 +264,63 @@ test('the API refuses writes without the app header and rejects bad input', asyn
   expect(r).toEqual({ noHeader: 403, negative: 422, unknownCat: 422, ok: 201, replay: 200 });
 });
 
-test('the money sheet opens with the amount focused, inside the tap', async ({ page }) => {
+test('the money sheet opens with its keypad ready and no system keyboard', async ({ page }) => {
   await page.goto('/');
   await synced(page);
-  // iOS only shows the keyboard for a focus() made synchronously in the tap, so check focus right after the click, before any timer runs
-  const focused = await page.evaluate(() => { document.querySelector('#bAdd').click(); return document.activeElement?.id; });
-  expect(focused).toBe('amt');
+  // nothing in the sheet takes focus, so iOS has no reason to raise its keyboard
+  const focused = await page.evaluate(() => { document.querySelector('#bAdd').click(); return document.activeElement?.tagName; });
+  expect(focused).not.toBe('INPUT');
+  await expect(page.locator('.sheet-wrap.open .keypad')).toBeVisible();
   await page.keyboard.press('Escape');
   await page.locator('.cat', { hasText: 'Concert' }).click();
   const detail = page.getByRole('dialog', { name: 'Concert' });
-  const fromDetail = await detail.evaluate(d => { [...d.querySelectorAll('button')].find(b => b.textContent === 'Withdraw').click(); return document.activeElement?.id; });
-  expect(fromDetail).toBe('amt');
+  const fromDetail = await detail.evaluate(d => { [...d.querySelectorAll('button')].find(b => b.textContent === 'Withdraw').click(); return document.activeElement?.tagName; });
+  expect(fromDetail).not.toBe('INPUT');
+  await expect(page.locator('.sheet-wrap.open .keypad')).toBeVisible();
+  await page.keyboard.press('Escape');
 });
 
-test('a comma typed as the decimal point means cents, as iOS types it in many regions', async ({ page }) => {
+test('the keypad types amounts the way a money field should', async ({ page }) => {
   await page.goto('/');
   await page.locator('#bAdd').click();
-  await page.locator('#amt').fill('12,50');
+  const amt = page.locator('#amt'), pad = page.locator('.sheet-wrap.open .keypad');
+  const tap = async keys => { for (const k of keys) await pad.getByRole('button', { name: k, exact: true }).click(); };
+  await expect(amt).toHaveText('0');
+  // a leading zero is replaced, a second point and a third decimal are refused
+  await tap(['0', '0', '5', 'Decimal point', 'Decimal point', '2', '5', '9']);
+  await expect(amt).toHaveText('5.25');
+  await tap(['Delete', 'Delete', 'Delete']);
+  await expect(amt).toHaveText('5');
+  await tap(['1', '2', '3', '4']);
+  await expect(amt).toHaveText('51,234');
+  await page.locator('.sheet-wrap.open .chip', { hasText: 'Concert' }).click();
+  await expect(page.locator('#go')).toHaveText('Add $51,234.00 to Concert');
+  // a point typed first means cents
+  await typeAmount(page, '.5');
+  await expect(amt).toHaveText('0.5');
+  await expect(page.locator('#go')).toHaveText('Add $0.50 to Concert');
+  await page.keyboard.press('Escape');
+});
+
+test('the note gets the system keyboard and folds the keypad away; tapping the amount brings it back', async ({ page }) => {
+  await page.goto('/');
+  await page.locator('#bAdd').click();
+  const keys = page.locator('.sheet-wrap.open .kp-wrap');
+  await page.locator('#note').click();
+  await expect(page.locator('#note')).toBeFocused();
+  await expect(keys).toHaveClass(/off/);
+  await expect.poll(() => keys.evaluate(k => k.offsetHeight)).toBe(0);
+  await page.locator('#amt').click();
+  await expect(page.locator('#note')).not.toBeFocused();
+  await expect(keys).not.toHaveClass(/off/);
+  await expect.poll(() => keys.evaluate(k => k.offsetHeight)).toBeGreaterThan(200);
+  await page.keyboard.press('Escape');
+});
+
+test('a hardware keyboard types into the amount, with a comma as the decimal point', async ({ page }) => {
+  await page.goto('/');
+  await page.locator('#bAdd').click();
+  await page.keyboard.type('12,50');
   await page.locator('.sheet-wrap.open .chip', { hasText: 'Concert' }).click();
   await expect(page.locator('#go')).toHaveText('Add $12.50 to Concert');
   await page.keyboard.press('Escape');
@@ -284,10 +331,10 @@ test('long amounts are never clipped in the money sheet', async ({ page }) => {
   await page.locator('#bAdd').click();
   const amt = page.locator('#amt');
   for (const v of ['8', '1234.56', '123456789.99']) {
-    await amt.fill(v);
+    await typeAmount(page, v);
     const m = await amt.evaluate(el => {
       const r = el.getBoundingClientRect(), s = el.closest('.sheet').getBoundingClientRect();
-      const a = el.closest('.amount').getBoundingClientRect(), cur = el.parentNode.previousElementSibling.getBoundingClientRect();
+      const a = el.closest('.amount').getBoundingClientRect(), cur = el.previousElementSibling.getBoundingClientRect();
       return { fits: el.scrollWidth <= el.clientWidth + 1, inside: r.left >= s.left && r.right <= s.right,
         centred: Math.abs((cur.left + r.right) / 2 - (a.left + a.right) / 2) < 30 };
     });
@@ -301,11 +348,11 @@ test('amounts and goals above what the server accepts cannot be saved', async ({
   await page.goto('/');
   await page.locator('#bAdd').click();
   await page.locator('.sheet-wrap.open .chip', { hasText: 'Concert' }).click();
-  await page.locator('#amt').fill('999999999999');
+  await typeAmount(page, '999999999.99');
   await expect(page.locator('#go')).toBeDisabled();
   await expect(page.locator('#go')).toHaveText('Amount too large');
   await expect(page.locator('.sheet-wrap.open .hint')).toHaveText('One entry can be at most $100,000,000.');
-  await page.locator('#amt').fill('100000000');
+  await typeAmount(page, '100000000');
   await expect(page.locator('#go')).toBeEnabled();
   await page.keyboard.press('Escape');
   await page.locator('.cat', { hasText: 'Concert' }).click();
@@ -329,21 +376,21 @@ async function swipeDown(page, distance) {
   await cdp.detach();
 }
 
-test('swiping the money sheet down dismisses it and the keyboard', async ({ page }) => {
+test('swiping the money sheet down dismisses it with its keypad', async ({ page }) => {
   await page.goto('/');
   await page.locator('#bAdd').click();
   const sheet = page.getByRole('dialog', { name: 'New transaction' });
-  await expect(page.locator('#amt')).toBeFocused();
   await page.waitForTimeout(400); // let it finish sliding in
-  // a short drag springs back and keeps the amount focused
+  // a short drag springs back and the keypad still types
   await swipeDown(page, 40);
   await expect(sheet).toBeVisible();
-  await expect(page.locator('#amt')).toBeFocused();
   await expect.poll(() => sheet.evaluate(d => d.style.transform)).toBe('');
-  // a long drag closes the sheet and blurs the amount, which puts the iOS keyboard away
+  await page.locator('.sheet-wrap.open .keypad').getByRole('button', { name: '7', exact: true }).click();
+  await expect(page.locator('#amt')).toHaveText('7');
+  // a long drag closes the sheet, keypad and all
   await swipeDown(page, 260);
   await expect(sheet).toBeHidden();
-  expect(await page.evaluate(() => document.activeElement?.tagName)).not.toBe('INPUT');
+  await expect(page.locator('.keypad')).toHaveCount(0);
 });
 
 test('with the keyboard up, a dismissed sheet slides off the bottom of the screen', async ({ page }) => {
@@ -382,6 +429,24 @@ async function swipeLeft(page, row, distance = 160) {
 }
 const balanceOf = (s, id) => s.transactions.reduce((a, t) =>
   a + (t.to === id ? t.amount : t.cat === id ? (t.type === 'add' ? t.amount : -t.amount) : 0), 0);
+
+test('when the keyboard comes up under an open sheet, the sheet slides up to it instead of jumping', async ({ page }) => {
+  await page.goto('/');
+  await page.locator('#bAdd').click();
+  await page.waitForTimeout(500);
+  const screen = await page.evaluate(() => innerHeight);
+  // the next frame after the visible area shrinks, the sheet still starts from about where it was
+  const first = await page.evaluate(h => new Promise(r => {
+    const card = document.querySelector('.sheet-wrap.open .sheet'), top = card.getBoundingClientRect().top;
+    document.documentElement.style.setProperty('--vv-h', h + 'px');
+    requestAnimationFrame(() => r(Math.abs(card.getBoundingClientRect().top - top)));
+  }), screen - 300);
+  expect(first).toBeLessThan(60);
+  // and it ends on the keyboard's edge
+  await expect.poll(() => page.locator('.sheet-wrap.open .sheet').evaluate(s => Math.round(s.getBoundingClientRect().bottom))).toBe(screen - 300);
+  await page.evaluate(() => document.documentElement.style.removeProperty('--vv-h'));
+  await page.keyboard.press('Escape');
+});
 
 test('a reached goal can be marked done: leftover moves, the rest is withdrawn, the category is archived', async ({ page }) => {
   await page.goto('/');

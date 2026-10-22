@@ -26,6 +26,7 @@ function h(tag, attrs = {}, ...kids) {
 const ICONS = {
   back: '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M15 5l-7 7 7 7"/></svg>',
   close: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><path d="M6 6l12 12M18 6 6 18"/></svg>',
+  del: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 5h10a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2H9l-6-7z"/><path d="M12.5 9.5l5 5M17.5 9.5l-5 5"/></svg>',
 };
 const svg = markup => { const t = document.createElement('template'); t.innerHTML = markup.trim(); return t.content.firstChild; };
 
@@ -148,7 +149,27 @@ function sheet(content, label) {
   requestAnimationFrame(() => requestAnimationFrame(() => wrap.classList.add('open')));
   openSheet = wrap;
   swipeToClose(wrap);
+  glide(wrap);
   return wrap;
+}
+// The layer follows the visible area, so when the iOS keyboard comes or goes under an open sheet, the sheet would jump
+// to its new spot in one frame. Start it from where it was and let it slide there instead. The layer is watched rather
+// than the visualViewport events, since this runs after layout and before paint, whatever moved it.
+function glide(wrap) {
+  const card = wrap.querySelector('.sheet');
+  let was = null;
+  new ResizeObserver(() => {
+    const now = { bottom: wrap.offsetTop + wrap.offsetHeight, h: wrap.offsetHeight }, before = was;
+    was = now;
+    // not mid-drag (inline transition 'none'), not once it's closing
+    if (!before || reduced || wrap !== openSheet || card.style.transition === 'none') return;
+    // the card sits on the layer's bottom edge, at most 90% of its height (.sheet max-height)
+    const top = l => l.bottom - Math.min(card.scrollHeight, l.h * .9), d = top(before) - top(now);
+    if (Math.abs(d) < 1) return;
+    card.style.transition = 'none'; card.style.transform = `translateY(${d}px)`;
+    card.getBoundingClientRect(); // commit that start position before animating from it
+    card.style.transform = card.style.transition = '';
+  }).observe(wrap);
 }
 // drag a sheet down to dismiss it (and the keyboard with it); a short drag springs back
 function swipeToClose(wrap) {
@@ -182,7 +203,7 @@ function swipeToClose(wrap) {
   card.addEventListener('touchend', end);
   card.addEventListener('touchcancel', end);
 }
-addEventListener('keydown', e => { if (e.key !== 'Escape') return; if (openSheet) closeSheet(); else if (full) closeFull(); else closeMenu(); });
+addEventListener('keydown', e => { if (e.key !== 'Escape') return openSheet?.onKey?.(e); if (openSheet) closeSheet(); else if (full) closeFull(); else closeMenu(); });
 // keep sheets above the iOS keyboard: pin the sheet layer to the part of the page that is actually visible
 if (window.visualViewport) {
   const vv = visualViewport, fit = () => {
@@ -204,20 +225,56 @@ function reveal(row, chip) {
 function openTx(type = 'add', o = {}) {
   if (!active().length) return openCategory();
   const sel = { type, a: o.cat || null, b: o.to || null };
-  const amt = h('input', { id: 'amt', inputmode: 'decimal', autocomplete: 'off', placeholder: '0', maxlength: '12', size: '1', 'aria-label': 'Amount' });
-  const field = h('span', { class: 'amount-field' }, amt);
+  // Amounts come from the sheet's own keypad, not the iOS keyboard: it is there the moment the sheet slides up, in the
+  // app's colours, and it moves with the sheet. The system keyboard only comes up for the note.
+  let raw = '', fresh = false; // what's been keyed: digits and at most one '.' with up to two decimals
+  const amt = h('div', { id: 'amt', class: 'amount-v', role: 'textbox', 'aria-readonly': 'true', 'aria-label': 'Amount' });
+  const amount = h('div', { class: 'amount', onclick: () => note.blur() }, h('span', {}, '$'), amt);
   const note = h('input', { id: 'note', class: 'field', placeholder: 'Note (optional)', autocomplete: 'off', maxlength: '200' });
   const seg = h('div', { class: 'seg', role: 'tablist' });
   const labA = h('div', { class: 'flabel' }), labB = h('div', { class: 'flabel' }, 'To');
   const rowA = h('div', { class: 'chips' }), rowB = h('div', { class: 'chips' });
   const hint = h('div', { class: 'hint' });
   const go = h('button', { class: 'go', id: 'go', onclick: submit });
-  // the input sizes to a hidden copy of its text (see .amount-field), so it never clips; long amounts shrink the type
-  const size = () => { field.dataset.v = amt.value || amt.placeholder; field.parentNode?.style.setProperty('--len', Math.max(7, amt.value.length)); };
-  const quick = h('div', { class: 'quick' }, [10, 25, 50, 100].map(v => h('button', {
-    onclick: () => { amt.value = String((parseAmount(amt.value) + v * 100) / 100); size(); update(); },
-  }, '+' + v)));
-  const cents = () => parseAmount(amt.value);
+  const cents = () => parseAmount(raw);
+  // long amounts shrink the type so they never clip; the last key typed eases in
+  function show() {
+    const [w, f] = raw.split('.'), s = raw && Number(w || 0).toLocaleString('en-US') + (f != null ? '.' + f : '');
+    const caret = h('i', { class: 'caret' });
+    if (!s) amt.replaceChildren(caret, h('span', { class: 'ph' }, '0'));
+    else if (fresh) amt.replaceChildren(s.slice(0, -1), h('span', { class: 'new' }, s.slice(-1)), caret);
+    else amt.replaceChildren(s, caret);
+    amount.style.setProperty('--len', Math.max(7, s.length));
+  }
+  function press(k) {
+    const [w, f] = raw.split('.');
+    const next = k === 'del' ? raw.slice(0, -1) : k === 'clear' ? ''
+      : k === '.' ? (f != null ? null : (w || '0') + '.')
+      : f != null ? (f.length < 2 ? raw + k : null)
+      : w === '0' ? k : w.length < 9 ? raw + k : null;
+    if (next == null) { // a third decimal, a second point, a tenth digit: shake instead of silently ignoring it
+      amount.classList.remove('shake'); void amount.offsetWidth; amount.classList.add('shake');
+      return;
+    }
+    fresh = next.length > raw.length; raw = next;
+    show(); update();
+  }
+  const KEYS = ['1', '2', '3', '4', '5', '6', '7', '8', '9', '.', '0', 'del'];
+  const pad = h('div', { class: 'keypad', role: 'group', 'aria-label': 'Amount keypad' }, KEYS.map(k => {
+    const b = h('button', { class: 'key', type: 'button', 'aria-label': k === 'del' ? 'Delete' : k === '.' ? 'Decimal point' : k,
+      onclick: () => { if (held) held = false; else press(k); } }, k === 'del' ? svg(ICONS.del) : k);
+    // holding delete clears the whole amount
+    let timer, held = false;
+    if (k === 'del') {
+      b.addEventListener('pointerdown', () => { held = false; timer = setTimeout(() => { held = true; press('clear'); }, 500); });
+      for (const ev of ['pointerup', 'pointercancel', 'pointerleave']) b.addEventListener(ev, () => clearTimeout(timer));
+    }
+    return b;
+  }));
+  const keys = h('div', { class: 'kp-wrap' }, pad);
+  // while the note has the iOS keyboard, fold the keypad away; tapping the amount puts the keyboard down and brings it back
+  note.addEventListener('focus', () => { keys.classList.add('off'); amount.classList.add('idle'); });
+  note.addEventListener('blur', () => { keys.classList.remove('off'); amount.classList.remove('idle'); });
 
   function chips(row, key, other) {
     const b = balances(store.cats, store.txs);
@@ -266,13 +323,17 @@ function openTx(type = 'add', o = {}) {
     closeSheet();
     toast(describe(tx), () => store.undoTx(tx.id));
   }
-  amt.addEventListener('input', () => { size(); update(); });
-  amt.addEventListener('keydown', e => { if (e.key === 'Enter') submit(); });
-  sheet(h('div', { class: 'form' }, seg, h('div', { class: 'amount' }, h('span', {}, '$'), field), quick, labA, rowA, labB, rowB, note, hint, go), 'New transaction');
-  size(); update();
-  // focus now, inside the tap that opened the sheet: iOS only raises the keyboard for a focus() made synchronously in a user gesture
-  amt.focus({ preventScroll: true });
-  amt.select();
+  note.addEventListener('keydown', e => { if (e.key === 'Enter') submit(); });
+  const wrap = sheet(h('div', { class: 'form tx-form' }, seg, amount, labA, rowA, labB, rowB, note, hint, keys, go), 'New transaction');
+  // a hardware keyboard types into the amount too
+  wrap.onKey = e => {
+    if (document.activeElement === note || e.metaKey || e.ctrlKey || e.altKey) return;
+    const k = e.key === ',' ? '.' : e.key === 'Backspace' ? 'del' : e.key;
+    if (KEYS.includes(k)) { e.preventDefault(); press(k); } else if (e.key === 'Enter' && !e.repeat) submit();
+  };
+  show(); update();
+  // nothing takes focus, so no system keyboard: the keypad is ready the moment the sheet slides up
+  if (document.activeElement && document.activeElement !== document.body) document.activeElement.blur();
 }
 function describe(t) {
   const a = store.cat(t.cat), b = t.to && store.cat(t.to);
